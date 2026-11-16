@@ -327,7 +327,7 @@ function qsTile(t, mode = '') {
   if (t.disabled) cls.push('disabled');
   const badge = mode === 'shown' ? `<button class="qs-badge" data-hide="${t.id}" title="Remove ${esc(t.label)}">−</button>`
     : mode === 'hidden' ? `<button class="qs-badge add" data-show="${t.id}" title="Add ${esc(t.label)}">+</button>` : '';
-  return `<div class="${cls.join(' ')}" data-tile="${t.id}" title="${esc(t.title || t.label)}"${mode === 'shown' ? ' draggable="true"' : ''}>${badge}
+  return `<div class="${cls.join(' ')}" data-tile="${t.id}" title="${esc(t.title || t.label)}">${badge}
     <button class="qs-main" ${t.disabled ? 'disabled' : ''}>${glyph(t.glyph, 18)}</button>
     ${t.page ? `<button class="qs-more" data-page="${t.page}" title="Open ${esc(t.label)} settings">${glyph('chevron', 13)}</button>` : ''}
     <div class="qs-label"><span class="ellipsis">${esc(t.label)}</span><span class="small muted ellipsis">${esc(t.sub || '')}</span></div>
@@ -441,35 +441,50 @@ function updateQuick(first = false) {
 }
 
 // Drag tiles to reorder them while editing (the order is saved when you let go).
+// Built on plain pointer events, not HTML drag-and-drop: on Windows that hands the drag to the
+// system, which can make this panel lose focus (and close) mid-drag.
 function setupTileDrag() {
   const grid = panel.querySelector('#qsGrid');
-  grid.addEventListener('dragstart', (e) => {
-    const t = e.target.closest('.qs-tile[draggable="true"]');
-    if (!t || !qsEditing) return;
-    qsTileDrag = t;
-    t.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', t.dataset.tile);
-  });
-  grid.addEventListener('dragover', (e) => {
-    if (!qsTileDrag) return;
+  grid.addEventListener('pointerdown', (e) => {
+    if (!qsEditing || e.button !== 0 || e.target.closest('.qs-badge')) return;
+    const tile = e.target.closest('.qs-tile');
+    if (!tile || !grid.contains(tile)) return;
     e.preventDefault();
-    const over = e.target.closest('.qs-tile');
-    if (!over || over === qsTileDrag) return;
-    const r = over.getBoundingClientRect();
-    grid.insertBefore(qsTileDrag, e.clientX > r.left + r.width / 2 ? over.nextSibling : over);
-  });
-  grid.addEventListener('drop', (e) => e.preventDefault());
-  grid.addEventListener('dragend', () => {
-    if (!qsTileDrag) return;
-    qsTileDrag.classList.remove('dragging');
-    qsTileDrag = null;
-    const visible = [...grid.querySelectorAll('.qs-tile')].map((t) => t.dataset.tile);
-    const L = qsLayout();
-    // keep hidden tiles' remembered positions after the visible ones
-    const order = [...visible, ...L.order.filter((id) => !visible.includes(id)), ...L.hidden.filter((id) => !visible.includes(id) && !L.order.includes(id))];
-    grid.dataset.html = ''; // force a clean redraw with the new order
-    saveQsLayout({ order });
+    grid.setPointerCapture(e.pointerId);
+    const start = { x: e.clientX, y: e.clientY };
+    let moving = false;
+    const move = (ev) => {
+      if (!moving) {
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
+        moving = true;
+        qsTileDrag = tile;
+        tile.classList.add('dragging');
+      }
+      // the dragged tile ignores the pointer (CSS), so this finds the tile underneath it
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = under && under.closest('.qs-tile');
+      if (!over || over === tile || !grid.contains(over)) return;
+      const r = over.getBoundingClientRect();
+      const after = ev.clientY > r.bottom ? true : ev.clientY < r.top ? false : ev.clientX > r.left + r.width / 2;
+      grid.insertBefore(tile, after ? over.nextSibling : over);
+    };
+    const end = () => {
+      grid.removeEventListener('pointermove', move);
+      grid.removeEventListener('pointerup', end);
+      grid.removeEventListener('pointercancel', end);
+      if (!moving) return;
+      tile.classList.remove('dragging');
+      qsTileDrag = null;
+      const visible = [...grid.querySelectorAll('.qs-tile')].map((t) => t.dataset.tile);
+      const L = qsLayout();
+      // keep hidden tiles' remembered positions after the visible ones
+      const order = [...visible, ...L.order.filter((id) => !visible.includes(id)), ...L.hidden.filter((id) => !visible.includes(id) && !L.order.includes(id))];
+      grid.dataset.html = ''; // redraw cleanly in the new order
+      saveQsLayout({ order });
+    };
+    grid.addEventListener('pointermove', move);
+    grid.addEventListener('pointerup', end);
+    grid.addEventListener('pointercancel', end);
   });
 }
 

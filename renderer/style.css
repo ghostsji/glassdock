@@ -527,3 +527,5 @@ body[data-platform="win32"]:not([data-saver="1"]) .qs-badge { color: #16171c; }
 .qs-editing .qs-edit-rows { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--hover); }
 .qs-editing .qs-foot { display: none; }
 .qs-editing .qs-sliders, .qs-editing #qsPowerMode { opacity: .5; pointer-events: none; }
+.qs-editing .qs-tile.dragging { pointer-events: none; opacity: .4; transform: scale(.96); animation: none; }
+.qs-editing #qsGrid { touch-action: none; }
