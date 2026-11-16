@@ -1,0 +1,44 @@
+{
+  "name": "glassdock",
+  "productName": "GlassDock",
+  "version": "1.0.0",
+  "description": "A free, open-source glass dock with live widgets for Windows.",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist32": "electron-builder --win --ia32"
+  },
+  "dependencies": {
+    "ical.js": "^2.2.1",
+    "koffi": "^2.15.0"
+  },
+  "devDependencies": {
+    "electron": "^45.3.1",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "dev.glassdock.app",
+    "productName": "GlassDock",
+    "files": [
+      "main.js",
+      "src/**",
+      "renderer/**",
+      "package.json",
+      "assets/**"
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true
+    }
+  }
+}

@@ -1,0 +1,62 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+const listen = (channel) => (cb) => {
+  const handler = (_e, data) => cb(data);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+};
+
+contextBridge.exposeInMainWorld('dock', {
+  platform: process.platform,
+  getState: () => ipcRenderer.invoke('get-state'),
+  onConfig: listen('config'),
+  onStats: listen('stats'),
+  onWeather: listen('weather'),
+  onAi: listen('ai'),
+  onPanel: listen('panel'),
+  onAppIcons: listen('app-icons'),
+  onSaver: listen('saver'),
+  onSound: listen('sound'),
+  onEvents: listen('events'),
+  onYr: listen('yr'),
+  yrRefresh: () => ipcRenderer.send('yr-refresh'),
+  openYr: () => ipcRenderer.send('yr-open'),
+  calAdd: (url) => ipcRenderer.invoke('cal-add', url),
+  calUpdate: (id, patch) => ipcRenderer.send('cal-update', id, patch),
+  calRemove: (id) => ipcRenderer.send('cal-remove', id),
+  calRefresh: () => ipcRenderer.send('cal-refresh'),
+  openEventLink: (key) => ipcRenderer.send('open-event-link', key),
+  setVolume: (v) => ipcRenderer.send('sound-volume', v),
+  volumeStep: (d) => ipcRenderer.send('sound-step', d),
+  toggleMute: (m) => ipcRenderer.send('sound-mute', m),
+  mediaCmd: (c) => ipcRenderer.send('media-cmd', c),
+  mediaSeek: (s) => ipcRenderer.send('media-seek', s),
+  panelSize: (h) => ipcRenderer.send('panel-size', h),
+  menuPick: (id) => ipcRenderer.send('menu-pick', id),
+  menuSize: (h) => ipcRenderer.send('menu-size', h),
+  // dropped files -> real paths (File.path no longer exists in recent Electron)
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
+  pinPaths: (paths) => ipcRenderer.send('apps-pin-paths', paths),
+  pinDialog: (kind) => ipcRenderer.send('apps-pin-dialog', kind),
+  launchApp: (id, opts) => ipcRenderer.send('apps-launch', id, opts),
+  onRunning: listen('running'),
+  focusOpen: (key, opts) => ipcRenderer.send('open-focus', key, opts),
+  openMenu: (key) => ipcRenderer.send('open-menu', key),
+  appMenu: (id) => ipcRenderer.send('apps-menu', id),
+  reorderApps: (ids) => ipcRenderer.send('apps-reorder', ids),
+  appsCatalog: () => ipcRenderer.invoke('apps-catalog'),
+  toggleCatalogApp: (key) => ipcRenderer.send('apps-toggle', key),
+  startMenu: () => ipcRenderer.send('start-menu'),
+  setConfig: (patch) => ipcRenderer.send('set-config', patch),
+  contentSize: (w, h) => ipcRenderer.send('content-size', { w, h }),
+  dragStart: () => ipcRenderer.send('drag-start'),
+  dragEnd: () => ipcRenderer.send('drag-end'),
+  webConnect: (id, mode) => ipcRenderer.send('web-connect', id, mode),
+  webDisconnect: (id) => ipcRenderer.send('web-disconnect', id),
+  webRefresh: () => ipcRenderer.send('web-refresh'),
+  openPanel: (name, anchor) => ipcRenderer.send('open-panel', name, anchor),
+  closePanel: () => ipcRenderer.send('close-panel'),
+  contextMenu: () => ipcRenderer.send('context-menu'),
+  geocode: (query) => ipcRenderer.invoke('geocode', query),
+  refreshWeather: () => ipcRenderer.send('refresh-weather'),
+});
