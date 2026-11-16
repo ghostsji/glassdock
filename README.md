@@ -105,8 +105,8 @@ Then:
 - Or click the **+** at the end of your apps, or right-click → **Pin apps…**. This shows every app
   in your Start menu, searchable and including Microsoft Store apps. Click one to pin or unpin it.
   **Browse for an app…** and **Pin a folder…** handle anything else.
-- **Click** an icon to open it. **Drag** icons to reorder them. **Right-click** an icon to open its
-  file location, move it or unpin it.
+- **Click** an icon to open it. **Click and hold**, then drag, to reorder icons. **Right-click** an
+  icon to open its file location, move it or unpin it.
 - **Running apps** get a dot under their icon. The dot is wider when the app has several windows,
   and becomes an accent-coloured bar for the app you're using. Clicking a running app switches to it
   instead of opening another copy. Click again to cycle its windows, or to minimize it if it has one.
@@ -150,6 +150,13 @@ default, turns it on whenever your PC runs on battery. While it's on:
 - The live glass blur and all animations are off, so the GPU can rest. The dock switches to a
   solid version of your style.
 - A small green leaf appears next to the battery widget, and the tray tooltip says it's on.
+
+## Rearrange the dock
+
+**Click and hold** any widget or pinned app icon. It sinks while an accent ring fills, then
+lifts and the others start to wiggle. Drag it where you want: the others slide aside. Let go
+to drop it, and the new order is saved. A quick click still opens things as usual. Turn on
+**Lock the dock** (right-click menu) to prevent moving things by accident.
 
 ## Move the dock
 

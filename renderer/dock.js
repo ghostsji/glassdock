@@ -118,7 +118,7 @@ const render = {
       const run = state.running && state.running.pinned && state.running.pinned[a.id];
       const cls = run ? ` running${run.n > 1 ? ' multi' : ''}${run.active ? ' active' : ''}` : '';
       const tip = run ? `${a.name} · ${run.n} window${run.n > 1 ? 's' : ''} (Shift+click for a new one)` : a.name;
-      h += `<span class="app${cls}" data-app="${esc(a.id)}" draggable="${!state.config.locked}" title="${esc(tip)}">${face}${run ? '<i class="run"></i>' : ''}</span>`;
+      h += `<span class="app${cls}" data-app="${esc(a.id)}" title="${esc(tip)}">${face}${run ? '<i class="run"></i>' : ''}</span>`;
     }
     const open = (state.config.showOpen && state.running && state.running.others) || [];
     if (open.length) {
@@ -253,14 +253,14 @@ function visibleWidgets() {
 }
 
 function build() {
+  if (lift) { pendingBuild = true; return; } // don't pull the DOM out from under a move
   row.innerHTML = state.config.locked ? '' : '<span class="grip" title="Drag to move the dock to any edge"></span>';
   for (const id of visibleWidgets()) {
     const el = document.createElement(id === 'apps' ? 'div' : 'button');
     el.className = `w ${id}`;
     el.dataset.id = id;
-    el.draggable = !state.config.locked;
     el.innerHTML = render[id]();
-    if (id === 'apps') { setupApps(el); addDrag(el); row.appendChild(el); continue; }
+    if (id === 'apps') { setupApps(el); row.appendChild(el); continue; }
     el.addEventListener('click', (e) => {
       const act = e.target.closest('[data-media]');
       if (act) { api.mediaCmd(act.dataset.media); return; }
@@ -275,7 +275,6 @@ function build() {
       el.addEventListener('wheel', (e) => { e.preventDefault(); api.volumeStep(e.deltaY < 0 ? 0.02 : -0.02); }, { passive: false });
       el.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); api.toggleMute(); } });
     }
-    addDrag(el);
     row.appendChild(el);
   }
   if (!row.querySelector('.w')) {
@@ -285,6 +284,7 @@ function build() {
 
 function update(ids) {
   for (const id of ids || Object.keys(render)) {
+    if (lift && id === 'apps' && lift.container !== row) continue; // an app icon is being moved
     const el = row.querySelector(`.w[data-id="${id}"]`);
     if (el) {
       const html = render[id]();
@@ -294,7 +294,6 @@ function update(ids) {
 }
 
 // ---------------------------------------------------------------- pinned apps
-let appDrag = null;
 
 function setupApps(el) {
   const anchor = (n) => {
@@ -333,31 +332,6 @@ function setupApps(el) {
     e.stopPropagation();
     if (a.dataset.open) api.openMenu(a.dataset.open); else api.appMenu(a.dataset.app);
   });
-  // drag an icon to reorder it
-  el.addEventListener('dragstart', (e) => {
-    const a = e.target.closest('.app[data-app]');
-    if (!a) return;
-    appDrag = a;
-    a.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', a.dataset.app);
-  });
-  el.addEventListener('dragover', (e) => {
-    if (!appDrag) return;
-    e.preventDefault();
-    const t = e.target.closest('.app[data-app]');
-    if (!t || t === appDrag) return;
-    const r = t.getBoundingClientRect();
-    const after = vertical() ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    el.insertBefore(appDrag, after ? t.nextSibling : t);
-  });
-  el.addEventListener('dragend', () => {
-    if (!appDrag) return;
-    appDrag.classList.remove('dragging');
-    appDrag = null;
-    const ids = [...el.querySelectorAll('.app[data-app]')].map((n) => n.dataset.app);
-    if (ids.join() !== (state.config.pinnedApps || []).map((a) => a.id).join()) api.reorderApps(ids);
-  });
 }
 
 // Drop files, shortcuts or folders from Explorer anywhere on the dock to pin them.
@@ -379,32 +353,146 @@ function setupFileDrop() {
   });
 }
 
-// ---------------------------------------------------------------- drag to reorder
-let dragEl = null;
-function addDrag(el) {
-  el.addEventListener('dragstart', (e) => {
-    if (e.target !== el) return; // an app icon inside the apps group is being dragged
-    dragEl = el;
-    el.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', el.dataset.id);
-  });
-  el.addEventListener('dragover', (e) => {
-    if (!dragEl || dragEl === el) return;
+// ---------------------------------------------------------------- hold to move
+// Press and hold a widget (or a pinned app icon) for a moment: it sinks while an accent ring
+// fills, then lifts, the others start a gentle wiggle, and it follows the mouse while the
+// rest slide aside. Let go to drop it. A quick click still opens things as usual.
+// Built on pointer events: HTML drag-and-drop isn't reliable in this never-focused window.
+const HOLD_MS = 350;
+let lift = null;           // the move in progress
+let swallowClick = false;  // the click that ends a move shouldn't open a panel
+let pendingBuild = false;  // a rebuild that arrived mid-move, done after the drop
+
+// Where an element sits in the layout, ignoring any transforms we're animating.
+function layoutPos(el, axis) {
+  const op = el.offsetParent;
+  const base = op ? op.getBoundingClientRect() : { left: 0, top: 0 };
+  return axis === 'x' ? base.left + el.offsetLeft : base.top + el.offsetTop;
+}
+
+// Slide the given elements from where they were to where `mutate` puts them (FLIP).
+function slideAround(els, axis, mutate) {
+  const before = new Map(els.map((e) => [e, layoutPos(e, axis)]));
+  mutate();
+  for (const e of els) {
+    const d = before.get(e) - layoutPos(e, axis);
+    if (!d) continue;
+    e.style.transition = 'none';
+    e.style.translate = axis === 'x' ? `${d}px 0` : `0 ${d}px`;
+    void e.offsetWidth; // apply the start position before animating
+    e.style.transition = 'translate .2s cubic-bezier(.2,.8,.2,1)';
+    e.style.translate = '0 0';
+  }
+}
+
+function setupHoldToMove() {
+  document.addEventListener('click', (e) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.stopPropagation();
     e.preventDefault();
-    const r = el.getBoundingClientRect();
-    const after = vertical() ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
-    row.insertBefore(dragEl, after ? el.nextSibling : el);
-  });
-  el.addEventListener('drop', (e) => e.preventDefault());
-  el.addEventListener('dragend', () => {
-    el.classList.remove('dragging');
-    dragEl = null;
-    const order = [...row.querySelectorAll('.w[data-id]')].map((n) => n.dataset.id);
-    // keep hidden-but-enabled widgets (e.g. battery on a desktop) in the list
-    const rest = state.config.widgets.filter((id) => !order.includes(id));
-    const widgets = [...order, ...rest];
-    if (widgets.join() !== state.config.widgets.join()) api.setConfig({ widgets });
+  }, true);
+
+  row.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || state.config.locked || lift) return;
+    // a pinned app icon moves within its group; anything else moves the whole widget
+    const app = e.target.closest('.app[data-app]');
+    const item = app || e.target.closest('.w[data-id]');
+    if (!item) return;
+    const container = app ? app.parentElement : row;
+    const selector = app ? '.app[data-app]' : '.w[data-id]';
+    const axis = vertical() ? 'y' : 'x';
+    const start = { x: e.clientX, y: e.clientY };
+    const pid = e.pointerId;
+    let active = false;
+
+    item.classList.add('holding');
+    const timer = setTimeout(begin, HOLD_MS);
+
+    function stopListening() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+    function cancel() {
+      clearTimeout(timer);
+      item.classList.remove('holding');
+      stopListening();
+    }
+    function onMove(ev) {
+      if (!active) {
+        // moved before the hold finished: it's not a hold
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 6) cancel();
+        return;
+      }
+      follow(ev);
+    }
+    function onUp() { if (active) drop(); else cancel(); }
+
+    function begin() {
+      active = true;
+      item.classList.remove('holding');
+      // keep getting the pointer even if it leaves the dock
+      try { row.setPointerCapture(pid); } catch {}
+      lift = { item, container, selector, axis, tx: 0, grab: (axis === 'x' ? start.x : start.y) - layoutPos(item, axis) };
+      item.classList.add('lifted');
+      container.classList.add('reordering');
+      document.body.classList.add('moving-items');
+      swallowClick = true;
+    }
+
+    function follow(ev) {
+      const p = axis === 'x' ? ev.clientX : ev.clientY;
+      const items = [...container.querySelectorAll(selector)].filter((n) => n.parentElement === container);
+      const others = items.filter((n) => n !== item);
+      // the item belongs before the first other item whose middle is past the pointer
+      let target = null;
+      for (const o of others) {
+        const mid = layoutPos(o, axis) + (axis === 'x' ? o.offsetWidth : o.offsetHeight) / 2;
+        if (p < mid) { target = o; break; }
+      }
+      const next = items[items.indexOf(item) + 1] || null;
+      if (target !== next && !(target === null && items[items.length - 1] === item)) {
+        slideAround(others, axis, () => {
+          if (target) container.insertBefore(item, target);
+          else container.insertBefore(item, others[others.length - 1].nextSibling);
+        });
+      }
+      // keep the lifted item under the pointer
+      lift.tx = p - lift.grab - layoutPos(item, axis);
+      item.style.transition = 'none';
+      item.style.translate = axis === 'x' ? `${lift.tx}px 0` : `0 ${lift.tx}px`;
+    }
+
+    function drop() {
+      stopListening();
+      active = false;
+      // settle into its slot
+      item.style.transition = 'translate .22s cubic-bezier(.2,.8,.2,1), scale .22s ease';
+      item.style.translate = '0 0';
+      item.classList.remove('lifted');
+      container.classList.remove('reordering');
+      document.body.classList.remove('moving-items');
+      setTimeout(() => { swallowClick = false; }, 400); // in case no click follows
+      setTimeout(() => {
+        for (const n of container.querySelectorAll(selector)) { n.style.transition = ''; n.style.translate = ''; }
+        lift = null;
+        if (app) {
+          const ids = [...container.querySelectorAll('.app[data-app]')].map((n) => n.dataset.app);
+          if (ids.join() !== (state.config.pinnedApps || []).map((a) => a.id).join()) api.reorderApps(ids);
+        } else {
+          const order = [...row.querySelectorAll('.w[data-id]')].map((n) => n.dataset.id);
+          // keep enabled-but-hidden widgets (e.g. battery on a desktop) in the list
+          const widgets = [...order, ...state.config.widgets.filter((id) => !order.includes(id))];
+          if (widgets.join() !== state.config.widgets.join()) api.setConfig({ widgets });
+        }
+        if (pendingBuild) { pendingBuild = false; build(); }
+      }, 240);
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   });
 }
 
@@ -473,7 +561,7 @@ async function init() {
     if (visibleWidgets().join() !== before) build(); else update(['media', 'volume', 'quick']);
   });
   api.onAppIcons((m) => { state.appIcons = m; update(['apps']); });
-  api.onRunning((r) => { state.running = r; if (!appDrag) update(['apps']); });
+  api.onRunning((r) => { state.running = r; if (!lift) update(['apps']); });
   api.onStats((s) => { state.stats = s; update(['cpu', 'ram', 'disk', 'uptime']); });
   api.onWeather((w) => { state.weather = w; update(['weather']); });
   api.onAi((a) => {
@@ -491,6 +579,7 @@ async function init() {
   ro.observe(row);
 
   setupMoveDrag();
+  setupHoldToMove();
   setupFileDrop();
 
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); api.contextMenu(); });

@@ -529,3 +529,34 @@ body[data-platform="win32"]:not([data-saver="1"]) .qs-badge { color: #16171c; }
 .qs-editing .qs-sliders, .qs-editing #qsPowerMode { opacity: .5; pointer-events: none; }
 .qs-editing .qs-tile.dragging { pointer-events: none; opacity: .4; transform: scale(.96); animation: none; }
 .qs-editing #qsGrid { touch-action: none; }
+
+/* ------------------------------------------------------------ hold to move */
+/* 1. holding: sink a little while an accent ring fills in */
+.w.holding, .app.holding { scale: .93; transition: scale .35s ease; animation: hold-ring .35s ease-out forwards; }
+@keyframes hold-ring {
+  from { box-shadow: inset 0 0 0 0 transparent; }
+  to { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+}
+/* 2. lifted: pop up with a shadow and follow the pointer */
+.w.lifted, .app.lifted {
+  position: relative; z-index: 10; scale: 1.08; cursor: grabbing;
+  background: var(--active);
+  box-shadow: inset 0 0 0 2px var(--accent), 0 10px 24px rgba(0,0,0,.35);
+  transition: scale .2s cubic-bezier(.34,1.56,.64,1);
+  animation: none;
+}
+/* 3. the others wiggle while something is being moved */
+.reordering > .w[data-id]:not(.lifted), .reordering > .app[data-app]:not(.lifted) { animation: move-wiggle .28s ease-in-out infinite alternate; }
+.reordering > .w[data-id]:nth-child(2n):not(.lifted), .reordering > .app[data-app]:nth-child(2n):not(.lifted) { animation-delay: -.14s; }
+@keyframes move-wiggle { from { rotate: -1.2deg; } to { rotate: 1.2deg; } }
+body.moving-items, body.moving-items * { cursor: grabbing !important; }
+body.moving-items .w:hover:not(.lifted) { background: transparent; }
+/* battery saver: keep the hold ring and lift, skip the continuous wiggle */
+body[data-saver="1"] .reordering > .w[data-id], body[data-saver="1"] .reordering > .app[data-app] { animation: none !important; }
+body[data-saver="1"] .w.holding, body[data-saver="1"] .app.holding { animation: hold-ring .35s ease-out forwards !important; }
+/* the lifted item is solid, so what it passes over doesn't show through */
+.w.lifted, .app.lifted { background: #34364a; }
+body[data-style="midnight"] .w.lifted, body[data-style="midnight"] .app.lifted { background: #26326b; }
+body[data-style="black"] .w.lifted, body[data-style="black"] .app.lifted { background: #1f1f26; }
+body[data-style="frost"] .w.lifted, body[data-style="frost"] .app.lifted,
+body[data-style="white"] .w.lifted, body[data-style="white"] .app.lifted { background: #ffffff; }
