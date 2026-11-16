@@ -141,9 +141,20 @@ function showDesktop() {
   keybd_event(0x5B, 0, 2, 0);
 }
 
+// Win + a letter, e.g. Win+K (Cast) or Win+P (Project).
+function winShortcut(letter) {
+  const vk = String(letter).toUpperCase().charCodeAt(0);
+  if (vk < 0x41 || vk > 0x5A) return;
+  keybd_event(0x5B, 0, 0, 0);
+  keybd_event(vk, 0, 0, 0);
+  keybd_event(vk, 0, 2, 0);
+  keybd_event(0x5B, 0, 2, 0);
+}
+
 module.exports = {
   openStartMenu,
   showDesktop,
+  winShortcut,
   ABS_AUTOHIDE,
   hwndFromBuffer,
   appBarRegister,

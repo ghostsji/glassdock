@@ -7,10 +7,25 @@ const vertical = () => state.config.edge === 'left' || state.config.edge === 'ri
 const AI_IDS = ['claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'];
 
 // Which panel each widget opens.
-const PANEL_FOR = { network: 'network', yr: 'yr', events: 'calendar', media: 'sound', volume: 'sound', clock: 'calendar', weather: 'weather', cpu: 'system', ram: 'system', disk: 'system', battery: 'system', uptime: 'system', claude: 'ai', codex: 'ai', gemini: 'ai', 'claude-web': 'ai', 'chatgpt-web': 'ai', 'grok-web': 'ai' };
+const PANEL_FOR = { quick: 'quick', network: 'network', yr: 'yr', events: 'calendar', media: 'sound', volume: 'sound', clock: 'calendar', weather: 'weather', cpu: 'system', ram: 'system', disk: 'system', battery: 'system', uptime: 'system', claude: 'ai', codex: 'ai', gemini: 'ai', 'claude-web': 'ai', 'chatgpt-web': 'ai', 'grok-web': 'ai' };
 
 // ---------------------------------------------------------------- widget renderers
 const render = {
+  // Quick settings button: network + Bluetooth + volume (+ battery on laptops), like Windows'
+  quick() {
+    const q = state.quick || {};
+    const n = state.network;
+    const v = state.sound && state.sound.volume;
+    if (!n && !v && !state.quick) return '';
+    let h = '<span class="qs-icons">';
+    if (n) h += `<span class="${n.online ? '' : 'net-off'}">${netIcon(n, 17)}</span>`;
+    if (q.bluetooth && q.bluetooth.on) h += glyph('bluetooth', 16);
+    if (v) h += speakerIcon(v.level, v.muted, 17);
+    if (hasBattery()) {
+      h += `<span class="qs-batt">${Math.round(battery.level * 100)}%</span>`;
+    }
+    return `${h}</span>`;
+  },
   // Network: signal icon, the network's name and live speeds (or why you're offline)
   network() {
     const n = state.network;
@@ -232,7 +247,7 @@ function visibleWidgets() {
   return state.config.widgets.filter((id) => {
     if (!render[id]) return false;
     if (id === 'battery') return hasBattery();
-    if (AI_IDS.includes(id) || ['media', 'volume', 'events', 'network'].includes(id)) return render[id]() !== ''; // hide when unavailable
+    if (AI_IDS.includes(id) || ['media', 'volume', 'events', 'network', 'quick'].includes(id)) return render[id]() !== ''; // hide when unavailable
     return true;
   });
 }
@@ -255,7 +270,7 @@ function build() {
       const panel = (id === 'weather' || id === 'yr') && !state.config.location ? 'settings' : PANEL_FOR[id];
       api.openPanel(panel, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
     });
-    if (id === 'volume' || id === 'media') {
+    if (id === 'volume' || id === 'media' || id === 'quick') {
       // scroll to change the volume, middle-click to mute
       el.addEventListener('wheel', (e) => { e.preventDefault(); api.volumeStep(e.deltaY < 0 ? 0.02 : -0.02); }, { passive: false });
       el.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); api.toggleMute(); } });
@@ -441,10 +456,11 @@ async function init() {
   api.onConfig((c) => { state.config = c; applyTheme(c); build(); });
   api.onSaver((v) => { state.saver = v; document.body.dataset.saver = v ? '1' : '0'; build(); });
   api.onYr((y) => { state.yr = y; update(['yr']); });
+  api.onQuick((q) => { state.quick = q; update(['quick']); });
   api.onNetwork((n) => {
     const before = visibleWidgets().join();
     state.network = n;
-    if (visibleWidgets().join() !== before) build(); else update(['network']);
+    if (visibleWidgets().join() !== before) build(); else update(['network', 'quick']);
   });
   api.onEvents((ev) => {
     const before = visibleWidgets().join();
@@ -454,7 +470,7 @@ async function init() {
   api.onSound((snd) => {
     const before = visibleWidgets().join();
     state.sound = snd;
-    if (visibleWidgets().join() !== before) build(); else update(['media', 'volume']);
+    if (visibleWidgets().join() !== before) build(); else update(['media', 'volume', 'quick']);
   });
   api.onAppIcons((m) => { state.appIcons = m; update(['apps']); });
   api.onRunning((r) => { state.running = r; if (!appDrag) update(['apps']); });

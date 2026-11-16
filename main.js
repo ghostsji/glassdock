@@ -1,5 +1,13 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, screen, nativeTheme, net, dialog, shell, powerMonitor, Notification } = require('electron');
 const { spawn, execFile } = require('child_process');
+// Start a Windows program without waiting for it; a failure to start is logged, never a crash.
+function launchDetached(cmd, args = []) {
+  try {
+    const p = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    p.on('error', (e) => console.error(`Couldn't start ${cmd}:`, e.message));
+    p.unref();
+  } catch (e) { console.error(`Couldn't start ${cmd}:`, e.message); }
+}
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -33,6 +41,7 @@ const STYLES = {
 const WIDGETS = [
   { id: 'apps', label: 'Pinned apps' },
   { id: 'media', label: 'Now playing' },
+  { id: 'quick', label: 'Quick settings (Wi-Fi, Bluetooth, sound)' },
   { id: 'network', label: 'Network' },
   { id: 'volume', label: 'Volume' },
   { id: 'events', label: 'Calendar events' },
@@ -62,7 +71,7 @@ const DEFAULTS = {
   units: 'celsius',        // 'celsius' | 'fahrenheit'
   location: null,          // { name, admin, country, lat, lon }
   hideTaskbar: false,
-  widgets: ['apps', 'events', 'media', 'volume', 'network', 'yr', 'clock', 'cpu', 'ram', 'disk', 'battery', 'claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'],
+  widgets: ['apps', 'events', 'media', 'quick', 'network', 'yr', 'clock', 'cpu', 'ram', 'disk', 'battery', 'claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'],
   web: { claude: false, chatgpt: false, grok: false }, // website accounts the user connected
   pinnedApps: [],          // [{ id, name, path } | { id, name, aumid }]
   showStart: true,         // Start button at the front of the apps group (Windows)
@@ -96,6 +105,11 @@ function loadConfig() {
   if (!cfg.knownWidgets.includes('yr') && cfg.knownWidgets.length && !cfg.widgets.includes('yr')) {
     const i = cfg.widgets.indexOf('weather');
     if (i >= 0) cfg.widgets.splice(i, 1, 'yr');
+  }
+  // Quick settings (which includes the volume) replaces the Volume widget in place, once.
+  if (!cfg.knownWidgets.includes('quick') && cfg.knownWidgets.length && !cfg.widgets.includes('quick')) {
+    const i = cfg.widgets.indexOf('volume');
+    if (i >= 0) cfg.widgets.splice(i, 1, 'quick');
   }
   // Turn on default widgets added since this config was saved (only once).
   for (const id of DEFAULTS.widgets) {
@@ -144,6 +158,7 @@ const publicState = () => ({
   weather,
   ai,
   appIcons,
+  quick: qsPublic,
   network: netPublic,
   yr: yrPublic(),
   events: eventsPublic(),
@@ -238,6 +253,7 @@ const PANELS = {
   calendar: { w: 340, h: 600 },
   yr: { w: 400, h: 620 },
   network: { w: 340, h: 470 },
+  quick: { w: 360, h: 560 },
   weather: { w: 340, h: 430 },
   system: { w: 310, h: 300 },
   settings: { w: 330, h: 680 },
@@ -279,6 +295,7 @@ function openPanel(name, anchor) {
 
   if (name === 'sound') pollSound(true);
   if (name === 'network') pollNet(true);
+  if (name === 'quick') { pollQuick(true); pollNet(true); pollSound(true); }
   if (name === 'yr') refreshYr(true);
   panelAnchor = anchor;
   placePanel(spec.w, spec.h);
@@ -650,6 +667,63 @@ function pollRunning() {
     lastRunningJson = json;
     broadcast('running', { pinned, others });
   }
+}
+
+// ---------------------------------------------------------------- quick settings
+let qsPublic = null;
+let qsBusy = false;
+const POWER_MODES = {
+  efficiency: '961cc777-2547-4f9d-8174-7d86181b8a7a',
+  balanced: '00000000-0000-0000-0000-000000000000',
+  performance: 'ded574b5-45a0-4f42-8737-46345c09c238',
+};
+
+function takeQuick(msg) {
+  const q = msg && msg.qs;
+  if (!q) return;
+  const radio = (kind) => {
+    const r = (q.radios || []).find((x) => x.kind === kind);
+    return r ? { on: r.state === 'On', state: r.state, name: r.name } : null;
+  };
+  const mode = Object.entries(POWER_MODES).find(([, g]) => g === q.overlay);
+  qsPublic = {
+    wifi: radio('WiFi'),
+    bluetooth: radio('Bluetooth'),
+    cellular: radio('MobileBroadband'),
+    brightness: Number.isFinite(q.brightness) ? q.brightness : null,
+    powerMode: q.overlay ? (mode ? mode[0] : 'custom') : null,
+  };
+  broadcast('quick', qsPublic);
+}
+
+async function pollQuick(force = false) {
+  if (qsBusy || !media || media.isDisabled()) return;
+  if (!force && !(dock && dock.isVisible() && (cfg.widgets.includes('quick') || popupName === 'quick'))) return;
+  qsBusy = true;
+  try { takeQuick(await media.call('qs')); } catch {} finally { qsBusy = false; }
+}
+
+async function quickCommand(cmd, arg) {
+  if (!media || media.isDisabled()) return;
+  try { takeQuick(await media.call(cmd, arg)); } catch (e) { console.error('Quick setting failed:', e.message); }
+  // radios take a moment to settle; network follows the Wi-Fi switch
+  setTimeout(() => { pollQuick(true); pollNet(true); }, 1500);
+}
+
+async function powerAction(what) {
+  if (what === 'lock') { launchDetached('rundll32.exe', ['user32.dll,LockWorkStation']); return; }
+  if (what === 'sleep') { hidePopup(); quickCommand('sleep'); return; }
+  if (what !== 'restart' && what !== 'shutdown') return;
+  hidePopup();
+  const restart = what === 'restart';
+  const { response } = await dialog.showMessageBox({
+    type: 'question', title: 'GlassDock', message: restart ? 'Restart your PC now?' : 'Shut down your PC now?',
+    detail: 'Save your work first: open apps will be closed.',
+    buttons: [restart ? 'Restart' : 'Shut down', 'Cancel'], defaultId: 1, cancelId: 1,
+  });
+  if (response !== 0) return;
+  // /hybrid matches the Start menu's "Shut down" (keeps fast startup)
+  launchDetached('shutdown.exe', restart ? ['/r', '/t', '0'] : ['/s', '/hybrid', '/t', '0']);
 }
 
 // ---------------------------------------------------------------- network
@@ -1237,7 +1311,7 @@ function menuTemplate() {
   const login = app.getLoginItemSettings();
   const displays = screen.getAllDisplays();
   const primaryId = screen.getPrimaryDisplay().id;
-  const start = (cmd) => () => spawn(cmd, [], { detached: true, stdio: 'ignore' }).unref();
+  const start = (cmd) => () => launchDetached(cmd);
   return [
     // the Windows taskbar's own shortcuts
     ...(IS_WIN ? [
@@ -1344,6 +1418,7 @@ const TIMERS = {        //  [work,              normal ms,  battery saver ms]
   running: () => (running ? [pollRunning, 1500, 5000] : null),
   sound: () => (media ? [pollSound, 1000, 4000] : null),
   network: () => (media ? [pollNet, 2000, 6000] : null),
+  quick: () => (media ? [pollQuick, 10000, 30000] : null),
   ai: () => [refreshAi, 60 * 1000, 5 * 60 * 1000],
   web: () => [() => refreshWeb(true), 5 * 60 * 1000, 15 * 60 * 1000],
   weather: () => [refreshWeather, 15 * 60 * 1000, 30 * 60 * 1000],
@@ -1454,7 +1529,22 @@ ipcMain.on('open-event-link', (_e, key) => {
 });
 ipcMain.on('yr-refresh', () => refreshYr(true));
 // Windows' own network screens only.
-const NET_PAGES = { wifi: 'ms-availablenetworks:', settings: 'ms-settings:network-status', location: 'ms-settings:privacy-location', adapters: 'ms-settings:network-advancedsettings' };
+const NET_PAGES = {
+  wifi: 'ms-availablenetworks:', settings: 'ms-settings:network-status', location: 'ms-settings:privacy-location',
+  adapters: 'ms-settings:network-advancedsettings', wifiSettings: 'ms-settings:network-wifi', bluetooth: 'ms-settings:bluetooth',
+  airplane: 'ms-settings:network-airplanemode', nightlight: 'ms-settings:nightlight', dnd: 'ms-settings:notifications',
+  hotspot: 'ms-settings:network-mobilehotspot', nearby: 'ms-settings:crossdevice', accessibility: 'ms-settings:easeofaccess',
+  energy: 'ms-settings:batterysaver', power: 'ms-settings:powersleep', display: 'ms-settings:display', sound: 'ms-settings:sound',
+  all: 'ms-settings:',
+};
+ipcMain.on('qs-radio', (_e, kind, on) => { if (['WiFi', 'Bluetooth', 'MobileBroadband'].includes(kind)) quickCommand('radio', { kind, on: !!on }); });
+ipcMain.on('qs-brightness', (_e, v) => { const n = Math.round(Number(v)); if (Number.isFinite(n)) quickCommand('brightness', Math.max(0, Math.min(100, n))); });
+ipcMain.on('qs-power-mode', (_e, mode) => { if (POWER_MODES[mode]) quickCommand('overlay', POWER_MODES[mode]); });
+ipcMain.on('qs-shortcut', (_e, which) => {
+  const key = { cast: 'K', project: 'P' }[which];
+  if (key && win32) { hidePopup(); setTimeout(() => { try { win32.winShortcut(key); } catch {} }, 120); }
+});
+ipcMain.on('qs-power', (_e, what) => powerAction(String(what || '')));
 ipcMain.on('net-open', (_e, which) => { const url = NET_PAGES[which]; if (url) { hidePopup(); shell.openExternal(url); } });
 ipcMain.on('yr-open', () => {
   if (!cfg.location) return;

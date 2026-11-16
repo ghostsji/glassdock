@@ -215,6 +215,159 @@ function renderCalendars() {
   requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
 }
 
+// ---------------------------------------------------------------- quick settings
+// Toggle tiles (switch on click, › opens the Settings page), sliders, power mode and power row.
+let qsDrag = null; // 'vol' | 'bright' while a slider is being dragged
+let qsTimers = {};
+
+const QS_LINKS = [
+  { key: 'airplane', label: 'Airplane mode', glyph: 'airplane' },
+  { key: 'nightlight', label: 'Night light', glyph: 'moon' },
+  { key: 'dnd', label: 'Do not disturb', glyph: 'bellOff' },
+  { key: 'hotspot', label: 'Mobile hotspot', glyph: 'hotspot' },
+  { key: 'cast', label: 'Cast', glyph: 'cast', shortcut: true },
+  { key: 'project', label: 'Project', glyph: 'project', shortcut: true },
+  { key: 'nearby', label: 'Nearby sharing', glyph: 'share' },
+  { key: 'accessibility', label: 'Accessibility', glyph: 'access' },
+  { key: 'energy', label: 'Energy saver', glyph: 'leafCircle' },
+];
+
+function renderQuick() {
+  panel.classList.add('qs-mode');
+  panel.innerHTML = `
+    <div class="qs-grid" id="qsGrid"></div>
+    <div class="qs-sliders">
+      <div class="qs-slider" id="qsBrightRow" style="display:none">
+        <button class="iconbtn" data-open="display" title="Display settings">${glyph('sun', 18)}</button>
+        <input type="range" class="slider" id="qsBright" min="0" max="100" step="1">
+        <span class="vol-pct" id="qsBrightPct"></span>
+      </div>
+      <div class="qs-slider vol" id="qsVolRow">
+        <button class="iconbtn" id="qsMute" title="Mute"></button>
+        <input type="range" class="slider" id="qsVol" min="0" max="100" step="1">
+        <span class="vol-pct" id="qsVolPct"></span>
+      </div>
+    </div>
+    <div id="qsPowerMode" style="display:none">
+      <div class="small muted" style="margin-bottom:6px">Power mode</div>
+      <div class="seg qs-seg">
+        <button data-mode="efficiency">Best efficiency</button><button data-mode="balanced">Balanced</button><button data-mode="performance">Best performance</button>
+      </div>
+    </div>
+    <div class="qs-foot">
+      <span class="qs-battery small muted" id="qsBattery"></span>
+      <span class="grow"></span>
+      <button class="iconbtn" data-open="all" title="All settings">${glyph('gear', 17)}</button>
+      <button class="iconbtn" data-power="lock" title="Lock">${glyph('lock', 17)}</button>
+      <button class="iconbtn" data-power="sleep" title="Sleep">${glyph('sleep', 17)}</button>
+      <button class="iconbtn" data-power="restart" title="Restart">${glyph('restart', 17)}</button>
+      <button class="iconbtn danger" data-power="shutdown" title="Shut down">${glyph('shutdown', 17)}</button>
+    </div>`;
+
+  // sliders: smooth while dragging, values sent at most ~20 times a second
+  const wire = (id, kind, send) => {
+    const el = panel.querySelector(id);
+    const pct = panel.querySelector(`${id}Pct`);
+    el.addEventListener('pointerdown', () => { qsDrag = kind; });
+    el.addEventListener('input', () => {
+      el.style.setProperty('--p', `${el.value}%`); pct.textContent = `${el.value}%`;
+      clearTimeout(qsTimers[kind]); qsTimers[kind] = setTimeout(() => send(Number(el.value)), 50);
+    });
+    const end = () => { if (qsDrag === kind) { qsDrag = null; send(Number(el.value)); } };
+    el.addEventListener('pointerup', end); el.addEventListener('change', end);
+    el.addEventListener('wheel', (e) => { e.preventDefault(); el.value = Number(el.value) + (e.deltaY < 0 ? 2 : -2); el.dispatchEvent(new Event('input')); }, { passive: false });
+  };
+  wire('#qsVol', 'vol', (v) => api.setVolume(v / 100));
+  wire('#qsBright', 'bright', (v) => api.qsBrightness(v));
+  panel.querySelector('#qsMute').onclick = () => api.toggleMute();
+  panel.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { panel.querySelectorAll('[data-mode]').forEach((x) => x.classList.toggle('on', x === b)); api.qsPowerMode(b.dataset.mode); }; });
+  panel.querySelectorAll('[data-power]').forEach((b) => { b.onclick = () => api.qsPower(b.dataset.power); });
+  panel.querySelectorAll('.qs-foot [data-open], #qsBrightRow [data-open]').forEach((b) => { b.onclick = () => api.netOpen(b.dataset.open); });
+  updateQuick(true);
+}
+
+function qsTile(t) {
+  const cls = ['qs-tile'];
+  if (t.on) cls.push('on');
+  if (t.disabled) cls.push('disabled');
+  return `<div class="${cls.join(' ')}" data-tile="${t.id}" title="${esc(t.title || t.label)}">
+    <button class="qs-main" ${t.disabled ? 'disabled' : ''}>${glyph(t.glyph, 18)}</button>
+    ${t.page ? `<button class="qs-more" data-page="${t.page}" title="Open ${esc(t.label)} settings">${glyph('chevron', 13)}</button>` : ''}
+    <div class="qs-label"><span class="ellipsis">${esc(t.label)}</span><span class="small muted ellipsis">${esc(t.sub || '')}</span></div>
+  </div>`;
+}
+
+function updateQuick(first = false) {
+  if (current !== 'quick' || !panel.querySelector('#qsGrid')) return;
+  const q = state.quick || {};
+  const n = state.network;
+  const v = state.sound && state.sound.volume;
+  const tiles = [];
+  if (q.wifi) {
+    tiles.push({ id: 'wifi', label: 'Wi-Fi', glyph: q.wifi.on ? 'wifi' : 'wifiOff', on: q.wifi.on, page: 'wifi',
+      sub: q.wifi.on ? (n && n.type === 'wifi' ? (n.nameHidden ? 'Connected' : n.name) : 'Not connected') : 'Off' });
+  }
+  tiles.push(q.bluetooth
+    ? { id: 'bluetooth', label: 'Bluetooth', glyph: q.bluetooth.on ? 'bluetooth' : 'bluetoothOff', on: q.bluetooth.on, page: 'bluetooth', sub: q.bluetooth.on ? 'On' : 'Off' }
+    : { id: 'bluetooth', label: 'Bluetooth', glyph: 'bluetoothOff', disabled: true, page: 'bluetooth', sub: q.wifi ? 'Not available' : '…' });
+  if (q.cellular) tiles.push({ id: 'cellular', label: 'Cellular', glyph: 'hotspot', on: q.cellular.on, sub: q.cellular.on ? 'On' : 'Off' });
+  for (const l of QS_LINKS) tiles.push({ id: l.key, label: l.label, glyph: l.glyph, sub: l.shortcut ? (l.key === 'cast' ? 'Win+K' : 'Win+P') : 'Settings', link: true, page: null });
+  const grid = panel.querySelector('#qsGrid');
+  const html = tiles.map(qsTile).join('');
+  if (grid.dataset.html !== html) {
+    grid.dataset.html = html;
+    grid.innerHTML = html;
+    grid.querySelectorAll('.qs-tile').forEach((el) => {
+      const id = el.dataset.tile;
+      el.querySelector('.qs-main').onclick = () => {
+        if (id === 'wifi' || id === 'bluetooth' || id === 'cellular') {
+          const r = q[id];
+          if (!r) return;
+          el.classList.toggle('on', !r.on); r.on = !r.on; // instant feedback; real state follows
+          api.qsRadio(id === 'wifi' ? 'WiFi' : id === 'bluetooth' ? 'Bluetooth' : 'MobileBroadband', r.on);
+        } else if (id === 'cast' || id === 'project') api.qsShortcut(id);
+        else api.netOpen(id);
+      };
+      el.querySelector('.qs-label').onclick = () => el.querySelector('.qs-main').click();
+      const more = el.querySelector('.qs-more');
+      if (more) more.onclick = (e) => { e.stopPropagation(); api.netOpen(more.dataset.page === 'wifi' ? 'wifi' : more.dataset.page); };
+    });
+  }
+  // brightness: laptop screens only
+  const bRow = panel.querySelector('#qsBrightRow');
+  bRow.style.display = q.brightness == null ? 'none' : '';
+  if (q.brightness != null && qsDrag !== 'bright') {
+    const b = panel.querySelector('#qsBright');
+    b.value = q.brightness; b.style.setProperty('--p', `${q.brightness}%`);
+    panel.querySelector('#qsBrightPct').textContent = `${q.brightness}%`;
+  }
+  // volume
+  const vRow = panel.querySelector('#qsVolRow');
+  vRow.style.display = v ? '' : 'none';
+  if (v) {
+    panel.querySelector('#qsMute').innerHTML = speakerIcon(v.level, v.muted, 19);
+    vRow.classList.toggle('muted', !!v.muted);
+    if (qsDrag !== 'vol') {
+      const s = panel.querySelector('#qsVol');
+      s.value = Math.round(v.level * 100); s.style.setProperty('--p', `${s.value}%`);
+      panel.querySelector('#qsVolPct').textContent = v.muted ? 'Muted' : `${s.value}%`;
+    }
+  }
+  // power mode
+  const pm = panel.querySelector('#qsPowerMode');
+  pm.style.display = q.powerMode ? '' : 'none';
+  panel.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === q.powerMode));
+  // battery
+  const bat = panel.querySelector('#qsBattery');
+  if (navigator.getBattery) {
+    navigator.getBattery().then((b) => {
+      const desktop = b.charging && b.level === 1 && b.chargingTime === 0;
+      bat.innerHTML = desktop ? '' : `${Math.round(b.level * 100)}%${b.charging ? ' · charging' : ''}`;
+    }).catch(() => {});
+  }
+  if (first) requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+}
+
 // ---------------------------------------------------------------- network
 function renderNetwork() {
   const n = state.network;
@@ -1055,11 +1208,11 @@ function renderSettings() {
 }
 
 // ---------------------------------------------------------------- routing
-const RENDER = { calendar: renderCalendar, weather: renderWeather, system: renderSystem, settings: renderSettings, ai: renderAi, apps: renderApps, menu: renderMenu, sound: renderSound, yr: renderYr, network: renderNetwork };
+const RENDER = { calendar: renderCalendar, weather: renderWeather, system: renderSystem, settings: renderSettings, ai: renderAi, apps: renderApps, menu: renderMenu, sound: renderSound, yr: renderYr, network: renderNetwork, quick: renderQuick };
 
 function show() {
   if (current !== 'calendar') clearInterval(clockTimer);
-  panel.classList.remove('scroll', 'noscroll', 'menu-mode', 'sound-mode', 'yr-mode', 'net-mode');
+  panel.classList.remove('scroll', 'noscroll', 'menu-mode', 'sound-mode', 'yr-mode', 'net-mode', 'qs-mode');
   (RENDER[current] || renderSettings)();
 }
 
@@ -1084,6 +1237,7 @@ api.onConfig((c) => {
   applyTheme(c);
   if (current === 'menu') return; // a menu shows a snapshot; it closes on any pick
   if (current === 'sound') { updateSound(); return; }
+  if (current === 'quick') { updateQuick(); return; }
   if (current === 'apps') { const n = panel.querySelector('.title + .small'); if (n) n.textContent = `${(c.pinnedApps || []).length} pinned`; return; }
   if (document.activeElement?.tagName !== 'INPUT') show();
 });
@@ -1093,10 +1247,12 @@ api.onNetwork((n) => {
   const typeChanged = !state.network || !n || state.network.type !== n.type || state.network.name !== n.name || state.network.online !== n.online || state.network.ip !== n.ip;
   state.network = n;
   if (current === 'network') { if (typeChanged) renderNetwork(); else updateNetwork(); }
+  if (current === 'quick') updateQuick();
 });
 api.onYr((y) => { if (!state) return; state.yr = y; if (current === 'yr') show(); });
 api.onEvents((ev) => { if (!state) return; state.events = ev; if (current === 'calendar' && document.activeElement?.tagName !== 'INPUT') show(); });
-api.onSound((snd) => { if (!state) return; state.sound = snd; if (current === 'sound') updateSound(); });
+api.onSound((snd) => { if (!state) return; state.sound = snd; if (current === 'sound') updateSound(); if (current === 'quick') updateQuick(); });
+api.onQuick((q) => { if (!state) return; state.quick = q; if (current === 'quick') updateQuick(); });
 api.onSaver((v) => { if (!state) return; state.saver = v; document.body.dataset.saver = v ? '1' : '0'; const n = document.getElementById('saverNote'); if (n) n.innerHTML = saverNote(); });
 api.onAi((a) => { if (state) { state.ai = a; if ((current === 'ai' || current === 'settings') && document.activeElement?.tagName !== 'INPUT') show(); } });
 api.onWeather((w) => { if (state) { state.weather = w; if (current === 'weather') show(); } });

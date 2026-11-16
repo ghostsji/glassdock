@@ -6,6 +6,9 @@
 //    that powers Windows' own media flyout (works with Spotify, browsers, most players).
 // GlassDock sends it one JSON request per line on stdin; it answers one JSON line on stdout.
 const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
@@ -64,19 +67,23 @@ public static class GdAudio {
 }
 '@
 
-$mgr = $null
+$asTaskGeneric = $null
 try {
   Add-Type -AssemblyName System.Runtime.WindowsRuntime
   $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` + '`' + String.raw`1'
   })[0]
+} catch {}
+function Await($op, [Type]$type) {
+  $task = $asTaskGeneric.MakeGenericMethod($type).Invoke($null, @($op))
+  [void]$task.Wait(5000)
+  return $task.Result
+}
+
+$mgr = $null
+try {
   [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
   [void][Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime]
-  function Await($op, [Type]$type) {
-    $task = $asTaskGeneric.MakeGenericMethod($type).Invoke($null, @($op))
-    [void]$task.Wait(5000)
-    return $task.Result
-  }
   $mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 } catch { $mgr = $null }
 
@@ -173,6 +180,50 @@ function Get-Net {
   return @{ adapters = $list; wifi = $(if ($hasWifi) { Get-Wifi } else { $null }) }
 }
 
+# ---- quick settings: radios (Wi-Fi, Bluetooth), laptop brightness, power mode, sleep
+$script:radiosOk = $false
+try {
+  [void][Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType = WindowsRuntime]
+  [void][Windows.Devices.Radios.RadioAccessStatus, Windows.System.Devices, ContentType = WindowsRuntime]
+  [void][Windows.Devices.Radios.RadioState, Windows.System.Devices, ContentType = WindowsRuntime]
+  [void](Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) ([Windows.Devices.Radios.RadioAccessStatus]))
+  $script:radiosOk = $true
+} catch {}
+
+function Get-RadioList {
+  return Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]])
+}
+
+function Get-QuickSettings {
+  $radios = @()
+  if ($script:radiosOk) {
+    try { $radios = @(Get-RadioList | ForEach-Object { @{ kind = [string]$_.Kind; state = [string]$_.State; name = [string]$_.Name } }) } catch {}
+  }
+  $bright = $null
+  try {
+    $b = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop | Select-Object -First 1
+    if ($b) { $bright = [int]$b.CurrentBrightness }
+  } catch {}
+  $overlay = $null
+  try {
+    $o = (powercfg /getactiveoverlayscheme 2>$null) | Out-String
+    if ($o -match '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') { $overlay = $Matches[1].ToLower() }
+  } catch {}
+  return @{ radios = $radios; brightness = $bright; overlay = $overlay }
+}
+
+function Set-Radio([string]$kind, [bool]$on) {
+  $state = if ($on) { [Windows.Devices.Radios.RadioState]::On } else { [Windows.Devices.Radios.RadioState]::Off }
+  foreach ($r in (Get-RadioList)) {
+    if ([string]$r.Kind -eq $kind) { [void](Await ($r.SetStateAsync($state)) ([Windows.Devices.Radios.RadioAccessStatus])) }
+  }
+}
+
+function Set-Brightness([int]$v) {
+  $m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop | Select-Object -First 1
+  [void](Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{ Timeout = [uint32]1; Brightness = [byte]([Math]::Max(0, [Math]::Min(100, $v))) })
+}
+
 function With-Session($fn) {
   if (-not $mgr) { return }
   $s = $mgr.GetCurrentSession()
@@ -185,6 +236,20 @@ while ($true) {
   $req = $null
   try { $req = $line | ConvertFrom-Json } catch { continue }
   $res = @{ id = $req.id; ok = $true }
+  if (@('qs', 'radio', 'brightness', 'overlay', 'sleep') -contains $req.cmd) {
+    try {
+      switch ($req.cmd) {
+        'radio' { if (@('WiFi', 'Bluetooth', 'MobileBroadband') -contains [string]$req.arg.kind) { Set-Radio ([string]$req.arg.kind) ([bool]$req.arg.on) } }
+        'brightness' { Set-Brightness ([int]$req.arg) }
+        'overlay' { if ([string]$req.arg -match '^[0-9a-f-]{36}$') { [void](powercfg /overlaysetactive ([string]$req.arg) 2>$null) } }
+        'sleep' { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false) }
+      }
+    } catch { $res.ok = $false; $res.error = $_.Exception.Message }
+    try { $res.qs = Get-QuickSettings } catch { $res.qs = $null }
+    [Console]::Out.WriteLine(($res | ConvertTo-Json -Compress -Depth 5))
+    [Console]::Out.Flush()
+    continue
+  }
   if ($req.cmd -eq 'net') {
     try { $res.net = Get-Net } catch { $res.ok = $false; $res.error = $_.Exception.Message }
     [Console]::Out.WriteLine(($res | ConvertTo-Json -Compress -Depth 5))
@@ -209,6 +274,7 @@ while ($true) {
 `;
 
 let proc = null;
+let scriptFile = null;
 let buffer = '';
 let seq = 0;
 const pending = new Map();
@@ -217,9 +283,12 @@ let disabled = false;
 
 function start() {
   if (disabled) throw new Error('media helper disabled after repeated failures');
-  const encoded = Buffer.from(SCRIPT, 'utf16le').toString('base64');
+  // Written fresh each start into your own temp folder; the BOM makes PowerShell 5 read it as UTF-8.
+  const file = path.join(os.tmpdir(), `glassdock-helper-${process.pid}.ps1`);
+  fs.writeFileSync(file, `\ufeff${SCRIPT}`, 'utf8');
+  scriptFile = file;
   proc = spawn('powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', file],
     { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   buffer = '';
   proc.stdout.setEncoding('utf8');
@@ -263,6 +332,7 @@ function call(cmd, arg) {
 function stop() {
   if (proc) { try { proc.stdin.end(); proc.kill(); } catch {} }
   proc = null;
+  if (scriptFile) { try { fs.unlinkSync(scriptFile); } catch {} scriptFile = null; }
 }
 
 module.exports = { call, stop, isDisabled: () => disabled };

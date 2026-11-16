@@ -158,7 +158,7 @@ const GLYPHS = {
   unpin: '<path d="M9 4h6l-1 5 3 3v1.5H7V12l3-3z"/><path d="M12 13.5V20"/><path d="M4 4l16 16"/>',
   pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6h4"/>',
   desktop: '<rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6"/>',
+  gear: '<path d="M12.2 2.5h-.4a1.8 1.8 0 0 0-1.8 1.8v.2a1.8 1.8 0 0 1-.9 1.5l-.4.2a1.8 1.8 0 0 1-1.8 0l-.1-.1a1.8 1.8 0 0 0-2.5.7l-.2.3a1.8 1.8 0 0 0 .7 2.5l.1.1a1.8 1.8 0 0 1 .9 1.5v.5a1.8 1.8 0 0 1-.9 1.6l-.1.1a1.8 1.8 0 0 0-.7 2.5l.2.3a1.8 1.8 0 0 0 2.5.7l.1-.1a1.8 1.8 0 0 1 1.8 0l.4.2a1.8 1.8 0 0 1 .9 1.6v.1a1.8 1.8 0 0 0 1.8 1.8h.4a1.8 1.8 0 0 0 1.8-1.8v-.2a1.8 1.8 0 0 1 .9-1.5l.4-.2a1.8 1.8 0 0 1 1.8 0l.1.1a1.8 1.8 0 0 0 2.5-.7l.2-.3a1.8 1.8 0 0 0-.7-2.5l-.1-.1a1.8 1.8 0 0 1-.9-1.6v-.4a1.8 1.8 0 0 1 .9-1.6l.1-.1a1.8 1.8 0 0 0 .7-2.5l-.2-.3a1.8 1.8 0 0 0-2.5-.7l-.1.1a1.8 1.8 0 0 1-1.8 0l-.4-.2a1.8 1.8 0 0 1-.9-1.5v-.2a1.8 1.8 0 0 0-1.8-1.8z"/><circle cx="12" cy="12" r="3"/>',
   apps: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><circle cx="16.75" cy="16.75" r="3.25"/>',
   start: '<rect x="4" y="4" width="7" height="7" rx="1.4"/><rect x="13" y="4" width="7" height="7" rx="1.4"/><rect x="4" y="13" width="7" height="7" rx="1.4"/><rect x="13" y="13" width="7" height="7" rx="1.4"/>',
   grid: '<path d="M4 9h16M4 15h16M9 4v16M15 4v16"/><rect x="4" y="4" width="16" height="16" rx="2.5"/>',
@@ -283,3 +283,24 @@ function fmtRate(bps, short = false) {
   const v = bps >= 100 ? Math.round(bps) : bps.toFixed(1);
   return short ? `${v}${u[i]}` : `${v} ${u[i]}`;
 }
+
+// ---- quick settings icons
+Object.assign(GLYPHS, {
+  wifi: '<path d="M2.5 8.5a13.5 13.5 0 0 1 19 0"/><path d="M5.5 11.8a9 9 0 0 1 13 0"/><path d="M8.5 15a4.8 4.8 0 0 1 7 0"/><circle cx="12" cy="18.6" r="1.3" fill="currentColor" stroke="none"/>',
+  wifiOff: '<path d="M2.5 8.5a13.5 13.5 0 0 1 19 0" opacity=".35"/><path d="M5.5 11.8a9 9 0 0 1 13 0" opacity=".35"/><path d="M8.5 15a4.8 4.8 0 0 1 7 0" opacity=".35"/><path d="M4 4l16 16"/>',
+  bluetooth: '<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>',
+  bluetoothOff: '<path d="M12 12V3l5 4.5-2.5 2.2M12 12v9l5-4.5-2.5-2.2M7 7.5l5 4.5M7 16.5l5-4.5"/><path d="M4 4l16 16"/>',
+  airplane: '<path d="M21 15.5v-2l-8-5V4a1.5 1.5 0 0 0-3 0v4.5l-8 5v2l8-2.5V18l-2.5 1.8V21l4-1 4 1v-1.2L13 18v-5z"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  bellOff: '<path d="M8.5 4.8A6 6 0 0 1 18 10v3.5l1.5 3H8"/><path d="M6 10v3.5L4.5 16.5H15"/><path d="M10 20a2 2 0 0 0 4 0"/><path d="M4 4l16 16"/>',
+  hotspot: '<circle cx="12" cy="12" r="1.8"/><path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
+  cast: '<path d="M3 16a5 5 0 0 1 5 5M3 12a9 9 0 0 1 9 9M3 8V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/><circle cx="3.5" cy="20.5" r=".6" fill="currentColor"/>',
+  project: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/>',
+  share: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>',
+  access: '<circle cx="12" cy="4.5" r="1.8"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3 6M12 14.5l3 6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
+  sleep: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/><path d="M15 4h3l-3 3.5h3" stroke-width="1.6"/>',
+  restart: '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/>',
+  shutdown: '<path d="M12 3.5v8"/><path d="M7 6.5a7.5 7.5 0 1 0 10 0"/>',
+  leafCircle: '<path d="M6 18c0-7 4.5-11.5 13-12.5-.5 8.5-5 13-12 13z"/><path d="M6 18l6-6"/>',
+});

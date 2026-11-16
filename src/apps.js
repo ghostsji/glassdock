@@ -67,7 +67,9 @@ async function mapLimit(items, limit, fn) {
 // ---------------------------------------------------------------- launching
 async function launch(entry) {
   if (entry.aumid) {
-    spawn('explorer.exe', [`shell:AppsFolder\\${entry.aumid}`], { detached: true, stdio: 'ignore' }).unref();
+    const p = spawn('explorer.exe', [`shell:AppsFolder\\${entry.aumid}`], { detached: true, stdio: 'ignore' });
+    p.on('error', () => {});
+    p.unref();
     return '';
   }
   if (!fs.existsSync(entry.path)) return `${entry.name} can't be found. It may have been moved or uninstalled.`;

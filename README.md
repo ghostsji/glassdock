@@ -1,7 +1,7 @@
 # GlassDock
 
 A free, open-source glass dock for Windows 10/11 with live widgets:
-**pinned apps, calendar events, now playing, volume, network, a Yr weather forecast, clock + calendar, CPU, RAM, disk, battery, uptime, and Claude / ChatGPT / Grok usage limits.**
+**pinned apps, calendar events, now playing, quick settings (Wi-Fi, Bluetooth, brightness…), network, a Yr weather forecast, clock + calendar, CPU, RAM, disk, battery, uptime, and Claude / ChatGPT / Grok usage limits.**
 
 - Real Windows acrylic glass, in 5 styles (Glass, Frost, Midnight, Black, White)
 - Floating pill or full width, on **any edge (top, bottom, left or right) of any monitor**, in 3 sizes
@@ -10,6 +10,21 @@ A free, open-source glass dock for Windows 10/11 with live widgets:
 - Hides itself when a game or video goes fullscreen
 - Weather from [Open-Meteo](https://open-meteo.com): free, no account and no API key
 - No accounts and no telemetry. The only network traffic is weather lookups.
+
+## Quick settings
+
+A Windows-style quick settings button on the dock (Wi-Fi, Bluetooth, volume and battery icons).
+Click it for:
+
+- **Wi-Fi** and **Bluetooth** switches that really turn the radios on and off. The › on each
+  opens its Settings page. Cellular also appears on PCs that have it.
+- **Brightness** (laptop screens; Windows has no standard control for most external monitors)
+  and **volume** sliders. Scroll on them too.
+- **Power mode:** Best efficiency, Balanced or Best performance.
+- **Cast** (Win+K) and **Project** (Win+P).
+- **Airplane mode, Night light, Do not disturb, Mobile hotspot, Nearby sharing, Accessibility,
+  Energy saver** open their Settings pages. Windows doesn't let apps switch these directly.
+- **Lock, Sleep, Restart, Shut down** (Restart and Shut down ask first), plus All settings.
 
 ## Network
 

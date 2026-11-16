@@ -474,3 +474,32 @@ body[data-vertical="1"] .w.network .nettext { align-items: center; }
 .net-row:first-child { border-top: 0; }
 .net-v { display: inline-flex; align-items: center; gap: 4px; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .net-copy { width: 22px; height: 22px; }
+
+/* ------------------------------------------------------------ quick settings */
+.w.quick .qs-icons { display: inline-flex; align-items: center; gap: 9px; }
+.w.quick .qs-batt { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+body[data-vertical="1"] .w.quick .qs-icons { flex-direction: column; gap: 6px; }
+#panel.qs-mode { gap: 14px; padding: 16px; }
+.qs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 8px; }
+.qs-tile { display: grid; grid-template-columns: 1fr auto; grid-template-rows: 44px auto; gap: 5px 0; min-width: 0; }
+.qs-main {
+  grid-column: 1 / -1; grid-row: 1; height: 44px; border: 0; border-radius: 9px;
+  background: var(--hover); color: var(--fg); display: flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.qs-tile:has(.qs-more) .qs-main { grid-column: 1; border-radius: 9px 0 0 9px; }
+.qs-more { grid-column: 2; grid-row: 1; width: 26px; border: 0; border-left: 1px solid var(--border); border-radius: 0 9px 9px 0; background: var(--hover); color: var(--fg); display: flex; align-items: center; justify-content: center; }
+.qs-main:hover, .qs-more:hover { background: var(--active); }
+.qs-tile.on .qs-main, .qs-tile.on .qs-more { background: var(--accent); color: #0b0c10; border-left-color: rgba(0,0,0,.15); }
+.qs-tile.on .qs-main:hover, .qs-tile.on .qs-more:hover { filter: brightness(1.08); }
+.qs-tile.disabled .qs-main { opacity: .45; }
+.qs-label { grid-column: 1 / -1; grid-row: 2; display: flex; flex-direction: column; align-items: center; text-align: center; font-size: 12px; line-height: 1.25; min-width: 0; cursor: default; }
+.qs-label > span { max-width: 100%; }
+.qs-sliders { display: flex; flex-direction: column; gap: 6px; }
+.qs-slider { display: flex; align-items: center; gap: 10px; }
+.qs-slider .iconbtn { width: 34px; height: 34px; flex: none; }
+.qs-seg { display: flex; }
+.qs-seg button { flex: 1; padding: 6px 4px; font-size: 12px; }
+.qs-foot { display: flex; align-items: center; gap: 2px; border-top: 1px solid var(--border); padding-top: 10px; }
+.qs-foot .iconbtn { width: 34px; height: 34px; }
+.qs-foot .iconbtn.danger:hover { color: var(--bad); }
