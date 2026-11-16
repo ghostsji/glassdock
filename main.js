@@ -79,6 +79,7 @@ const DEFAULTS = {
   dockHidden: false,       // hidden from the tray icon; the tray brings it back
   batterySaver: 'auto',    // 'off' | 'auto' (when on battery) | 'on'
   locked: false,           // stops dragging the dock, widgets and app icons around
+  qsLayout: null,          // quick settings: { order, hidden, sections } (null = default)
   calendars: [],           // [{ id, url, name, color, enabled }]
   eventAlerts: true,       // notification 5 minutes before an event
   yrContact: '',           // optional email/website sent to MET Norway, as their terms ask
@@ -1474,9 +1475,18 @@ let trayMenu = null;
 ipcMain.handle('get-state', () => publicState());
 ipcMain.handle('geocode', (_e, q) => geocode(String(q || '').slice(0, 100)));
 ipcMain.on('set-config', (_e, patch) => {
-  const allowed = ['edge', 'layout', 'style', 'size', 'clock24', 'clockSeconds', 'units', 'location', 'hideTaskbar', 'widgets', 'claudeBudget', 'geminiDailyLimit', 'showStart', 'showOpen', 'locked', 'batterySaver', 'eventAlerts', 'yrContact'];
-  setConfig(Object.fromEntries(Object.entries(patch || {}).filter(([k]) => allowed.includes(k))));
+  const allowed = ['edge', 'layout', 'style', 'size', 'clock24', 'clockSeconds', 'units', 'location', 'hideTaskbar', 'widgets', 'claudeBudget', 'geminiDailyLimit', 'showStart', 'showOpen', 'locked', 'batterySaver', 'eventAlerts', 'yrContact', 'qsLayout'];
+  const clean = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => allowed.includes(k)));
+  if ('qsLayout' in clean) clean.qsLayout = cleanQsLayout(clean.qsLayout);
+  setConfig(clean);
 });
+// Quick settings layout from the panel: only known tile and row names, nothing else.
+const QS_TILES = ['wifi', 'bluetooth', 'cellular', 'airplane', 'nightlight', 'dnd', 'hotspot', 'cast', 'project', 'nearby', 'accessibility', 'energy'];
+function cleanQsLayout(L) {
+  if (!L || typeof L !== 'object') return null; // null = default layout
+  const ids = (a, known) => [...new Set((Array.isArray(a) ? a : []).filter((x) => known.includes(x)))];
+  return { order: ids(L.order, QS_TILES), hidden: ids(L.hidden, QS_TILES), sections: ids(L.sections, ['brightness', 'volume', 'power']) };
+}
 let sizeTimer = null;
 ipcMain.on('content-size', (_e, size) => {
   const w = Number(size && size.w), h = Number(size && size.h);

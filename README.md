@@ -25,6 +25,9 @@ Click it for:
 - **Airplane mode, Night light, Do not disturb, Mobile hotspot, Nearby sharing, Accessibility,
   Energy saver** open their Settings pages. Windows doesn't let apps switch these directly.
 - **Lock, Sleep, Restart, Shut down** (Restart and Shut down ask first), plus All settings.
+- **Make it yours:** click ✎ (Edit) to drag tiles into any order, remove the ones you don't use
+  (−) or add them back (+), and show or hide the brightness, volume and power mode rows.
+  **Reset** puts everything back. You can also drag the dock's widgets themselves into any order.
 
 ## Network
 

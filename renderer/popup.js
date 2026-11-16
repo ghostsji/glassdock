@@ -8,6 +8,18 @@ let clockTimer = null;
 let calSelected = null; // day shown in the agenda
 let calView = 'month'; // 'month' | 'manage'
 
+
+// How tall the panel's content really is. The panel always fills the window, so measuring the
+// panel itself could only ever grow; measure it at its natural height instead.
+function contentHeight() {
+  const prev = panel.style.height;
+  panel.style.height = 'auto';
+  const h = panel.scrollHeight;
+  panel.style.height = prev;
+  return h + 2;
+}
+function fitPanel(max = 720) { requestAnimationFrame(() => api.panelSize(Math.min(contentHeight(), max))); }
+
 // ---------------------------------------------------------------- calendar
 function renderCalendar() {
   if (calView === 'manage') { renderCalendars(); return; }
@@ -71,7 +83,7 @@ function renderCalendar() {
     const el = document.getElementById('bigclock');
     if (el) el.textContent = fmtTime(new Date(), state.config, true);
   }, 1000);
-  requestAnimationFrame(() => api.panelSize(Math.min(panel.scrollHeight + 2, 640)));
+  fitPanel(640);
 }
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -211,13 +223,24 @@ function renderCalendars() {
   };
   panel.querySelector('#calAdd').onclick = add;
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-  panel.querySelector('.calhelp').addEventListener('toggle', () => requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2)));
-  requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+  panel.querySelector('.calhelp').addEventListener('toggle', () => fitPanel());
+  fitPanel();
 }
 
 // ---------------------------------------------------------------- quick settings
 // Toggle tiles (switch on click, › opens the Settings page), sliders, power mode and power row.
 let qsDrag = null; // 'vol' | 'bright' while a slider is being dragged
+let qsEditing = false; // "Edit quick settings" mode
+let qsTileDrag = null; // tile being dragged while editing
+
+// Saved layout: tile order, hidden tiles, hidden rows ('brightness' | 'volume' | 'power').
+function qsLayout() {
+  const L = state.config.qsLayout || {};
+  return { order: L.order || [], hidden: L.hidden || [], sections: L.sections || [] };
+}
+function saveQsLayout(patch) {
+  api.setConfig({ qsLayout: { ...qsLayout(), ...patch } });
+}
 let qsTimers = {};
 
 const QS_LINKS = [
@@ -254,9 +277,17 @@ function renderQuick() {
         <button data-mode="efficiency">Best efficiency</button><button data-mode="balanced">Balanced</button><button data-mode="performance">Best performance</button>
       </div>
     </div>
+    <div class="qs-edit-rows" id="qsEditRows"></div>
+    <div class="qs-hidden" id="qsHiddenWrap"><div class="small muted" style="margin-bottom:8px">Add tiles</div><div class="qs-grid" id="qsHidden"></div></div>
+    <div class="qs-editbar" id="qsEditBar">
+      <span class="small muted grow">Drag tiles to move them. − removes, + adds.</span>
+      <button class="btn small ghost" id="qsReset">Reset</button>
+      <button class="btn small" id="qsDone">Done</button>
+    </div>
     <div class="qs-foot">
       <span class="qs-battery small muted" id="qsBattery"></span>
       <span class="grow"></span>
+      <button class="iconbtn" id="qsEdit" title="Edit quick settings">${glyph('edit', 17)}</button>
       <button class="iconbtn" data-open="all" title="All settings">${glyph('gear', 17)}</button>
       <button class="iconbtn" data-power="lock" title="Lock">${glyph('lock', 17)}</button>
       <button class="iconbtn" data-power="sleep" title="Sleep">${glyph('sleep', 17)}</button>
@@ -283,14 +314,20 @@ function renderQuick() {
   panel.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { panel.querySelectorAll('[data-mode]').forEach((x) => x.classList.toggle('on', x === b)); api.qsPowerMode(b.dataset.mode); }; });
   panel.querySelectorAll('[data-power]').forEach((b) => { b.onclick = () => api.qsPower(b.dataset.power); });
   panel.querySelectorAll('.qs-foot [data-open], #qsBrightRow [data-open]').forEach((b) => { b.onclick = () => api.netOpen(b.dataset.open); });
+  panel.querySelector('#qsEdit').onclick = () => { qsEditing = true; updateQuick(true); };
+  panel.querySelector('#qsDone').onclick = () => { qsEditing = false; updateQuick(true); };
+  panel.querySelector('#qsReset').onclick = () => api.setConfig({ qsLayout: null });
+  setupTileDrag();
   updateQuick(true);
 }
 
-function qsTile(t) {
+function qsTile(t, mode = '') {
   const cls = ['qs-tile'];
   if (t.on) cls.push('on');
   if (t.disabled) cls.push('disabled');
-  return `<div class="${cls.join(' ')}" data-tile="${t.id}" title="${esc(t.title || t.label)}">
+  const badge = mode === 'shown' ? `<button class="qs-badge" data-hide="${t.id}" title="Remove ${esc(t.label)}">−</button>`
+    : mode === 'hidden' ? `<button class="qs-badge add" data-show="${t.id}" title="Add ${esc(t.label)}">+</button>` : '';
+  return `<div class="${cls.join(' ')}" data-tile="${t.id}" title="${esc(t.title || t.label)}"${mode === 'shown' ? ' draggable="true"' : ''}>${badge}
     <button class="qs-main" ${t.disabled ? 'disabled' : ''}>${glyph(t.glyph, 18)}</button>
     ${t.page ? `<button class="qs-more" data-page="${t.page}" title="Open ${esc(t.label)} settings">${glyph('chevron', 13)}</button>` : ''}
     <div class="qs-label"><span class="ellipsis">${esc(t.label)}</span><span class="small muted ellipsis">${esc(t.sub || '')}</span></div>
@@ -312,14 +349,49 @@ function updateQuick(first = false) {
     : { id: 'bluetooth', label: 'Bluetooth', glyph: 'bluetoothOff', disabled: true, page: 'bluetooth', sub: q.wifi ? 'Not available' : '…' });
   if (q.cellular) tiles.push({ id: 'cellular', label: 'Cellular', glyph: 'hotspot', on: q.cellular.on, sub: q.cellular.on ? 'On' : 'Off' });
   for (const l of QS_LINKS) tiles.push({ id: l.key, label: l.label, glyph: l.glyph, sub: l.shortcut ? (l.key === 'cast' ? 'Win+K' : 'Win+P') : 'Settings', link: true, page: null });
+  const L = qsLayout();
+  const def = tiles.map((t) => t.id);
+  const rank = (id) => { const i = L.order.indexOf(id); return i >= 0 ? i : 1000 + def.indexOf(id); };
+  tiles.sort((a, b) => rank(a.id) - rank(b.id));
+  const shown = tiles.filter((t) => !L.hidden.includes(t.id));
+  const hiddenTiles = tiles.filter((t) => L.hidden.includes(t.id));
+  panel.classList.toggle('qs-editing', qsEditing);
+  if (qsTileDrag) return; // don't redraw under a tile being dragged
   const grid = panel.querySelector('#qsGrid');
-  const html = tiles.map(qsTile).join('');
+  const html = shown.map((t) => qsTile(t, qsEditing ? 'shown' : '')).join('') || (qsEditing ? '<div class="small muted">All tiles removed. Add some below.</div>' : '');
+  const hidHtml = qsEditing ? hiddenTiles.map((t) => qsTile(t, 'hidden')).join('') : '';
+  panel.querySelector('#qsHiddenWrap').style.display = qsEditing && hiddenTiles.length ? '' : 'none';
+  const hid = panel.querySelector('#qsHidden');
+  if (hid.dataset.html !== hidHtml) {
+    hid.dataset.html = hidHtml;
+    hid.innerHTML = hidHtml;
+    hid.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => saveQsLayout({ hidden: qsLayout().hidden.filter((x) => x !== b.dataset.show) }); });
+  }
+  // rows you can hide while editing
+  const rows = [['brightness', 'Brightness slider', q.brightness != null], ['volume', 'Volume slider', !!v], ['power', 'Power mode', !!q.powerMode]].filter((r) => r[2]);
+  const rowsHtml = qsEditing ? rows.map(([k, label]) => `<div class="row between"><span>${label}</span><span class="switch${L.sections.includes(k) ? '' : ' on'}" data-section="${k}"><i></i></span></div>`).join('') : '';
+  const er = panel.querySelector('#qsEditRows');
+  if (er.dataset.html !== rowsHtml) {
+    er.dataset.html = rowsHtml;
+    er.innerHTML = rowsHtml;
+    er.querySelectorAll('[data-section]').forEach((sw) => {
+      sw.onclick = () => {
+        const k = sw.dataset.section;
+        const cur = qsLayout().sections;
+        saveQsLayout({ sections: cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k] });
+      };
+    });
+  }
   if (grid.dataset.html !== html) {
     grid.dataset.html = html;
     grid.innerHTML = html;
+    grid.querySelectorAll('[data-hide]').forEach((b) => {
+      b.onclick = (e) => { e.stopPropagation(); saveQsLayout({ hidden: [...qsLayout().hidden, b.dataset.hide] }); };
+    });
     grid.querySelectorAll('.qs-tile').forEach((el) => {
       const id = el.dataset.tile;
       el.querySelector('.qs-main').onclick = () => {
+        if (qsEditing) return; // tiles don't act while you're arranging them
         if (id === 'wifi' || id === 'bluetooth' || id === 'cellular') {
           const r = q[id];
           if (!r) return;
@@ -330,12 +402,12 @@ function updateQuick(first = false) {
       };
       el.querySelector('.qs-label').onclick = () => el.querySelector('.qs-main').click();
       const more = el.querySelector('.qs-more');
-      if (more) more.onclick = (e) => { e.stopPropagation(); api.netOpen(more.dataset.page === 'wifi' ? 'wifi' : more.dataset.page); };
+      if (more) more.onclick = (e) => { e.stopPropagation(); if (!qsEditing) api.netOpen(more.dataset.page === 'wifi' ? 'wifi' : more.dataset.page); };
     });
   }
   // brightness: laptop screens only
   const bRow = panel.querySelector('#qsBrightRow');
-  bRow.style.display = q.brightness == null ? 'none' : '';
+  bRow.style.display = q.brightness == null || (L.sections.includes('brightness') && !qsEditing) ? 'none' : '';
   if (q.brightness != null && qsDrag !== 'bright') {
     const b = panel.querySelector('#qsBright');
     b.value = q.brightness; b.style.setProperty('--p', `${q.brightness}%`);
@@ -343,7 +415,7 @@ function updateQuick(first = false) {
   }
   // volume
   const vRow = panel.querySelector('#qsVolRow');
-  vRow.style.display = v ? '' : 'none';
+  vRow.style.display = v && !(L.sections.includes('volume') && !qsEditing) ? '' : 'none';
   if (v) {
     panel.querySelector('#qsMute').innerHTML = speakerIcon(v.level, v.muted, 19);
     vRow.classList.toggle('muted', !!v.muted);
@@ -355,7 +427,7 @@ function updateQuick(first = false) {
   }
   // power mode
   const pm = panel.querySelector('#qsPowerMode');
-  pm.style.display = q.powerMode ? '' : 'none';
+  pm.style.display = q.powerMode && !(L.sections.includes('power') && !qsEditing) ? '' : 'none';
   panel.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === q.powerMode));
   // battery
   const bat = panel.querySelector('#qsBattery');
@@ -365,7 +437,40 @@ function updateQuick(first = false) {
       bat.innerHTML = desktop ? '' : `${Math.round(b.level * 100)}%${b.charging ? ' · charging' : ''}`;
     }).catch(() => {});
   }
-  if (first) requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+  if (first || qsEditing) fitPanel();
+}
+
+// Drag tiles to reorder them while editing (the order is saved when you let go).
+function setupTileDrag() {
+  const grid = panel.querySelector('#qsGrid');
+  grid.addEventListener('dragstart', (e) => {
+    const t = e.target.closest('.qs-tile[draggable="true"]');
+    if (!t || !qsEditing) return;
+    qsTileDrag = t;
+    t.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', t.dataset.tile);
+  });
+  grid.addEventListener('dragover', (e) => {
+    if (!qsTileDrag) return;
+    e.preventDefault();
+    const over = e.target.closest('.qs-tile');
+    if (!over || over === qsTileDrag) return;
+    const r = over.getBoundingClientRect();
+    grid.insertBefore(qsTileDrag, e.clientX > r.left + r.width / 2 ? over.nextSibling : over);
+  });
+  grid.addEventListener('drop', (e) => e.preventDefault());
+  grid.addEventListener('dragend', () => {
+    if (!qsTileDrag) return;
+    qsTileDrag.classList.remove('dragging');
+    qsTileDrag = null;
+    const visible = [...grid.querySelectorAll('.qs-tile')].map((t) => t.dataset.tile);
+    const L = qsLayout();
+    // keep hidden tiles' remembered positions after the visible ones
+    const order = [...visible, ...L.order.filter((id) => !visible.includes(id)), ...L.hidden.filter((id) => !visible.includes(id) && !L.order.includes(id))];
+    grid.dataset.html = ''; // force a clean redraw with the new order
+    saveQsLayout({ order });
+  });
 }
 
 // ---------------------------------------------------------------- network
@@ -414,7 +519,7 @@ function renderNetwork() {
       try { await navigator.clipboard.writeText(b.dataset.copy); b.innerHTML = glyph('check', 13); setTimeout(() => { if (b.isConnected) b.innerHTML = glyph('restore', 13); }, 1200); } catch {}
     };
   });
-  requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+  fitPanel();
 }
 
 // Live speeds update in place (no redraw), so hovering and copying aren't interrupted.
@@ -454,7 +559,7 @@ function renderYr() {
       <div class="muted">${y.status === 'error' || y.status === 'stale' ? esc(y.error || "Couldn't load the forecast.") : 'Loading the forecast from Yr…'}</div>
       ${y.error ? '<div><button class="btn small" id="yrRetry">Try again</button></div>' : ''}${credit}`;
     const r = panel.querySelector('#yrRetry'); if (r) r.onclick = () => api.yrRefresh();
-    requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+    fitPanel();
     return;
   }
   const now = Date.now();
@@ -508,7 +613,7 @@ function renderYr() {
   panel.querySelector('#yrRefresh').onclick = () => api.yrRefresh();
   panel.querySelectorAll('.yr-seg button').forEach((b) => { b.onclick = () => { yrRange = Number(b.dataset.r); renderYr(); }; });
   panel.querySelector('#yrSite').onclick = () => api.openYr();
-  requestAnimationFrame(() => api.panelSize(Math.min(panel.scrollHeight + 2, 720)));
+  fitPanel(720);
 }
 
 function windArrow(from) {
@@ -992,7 +1097,7 @@ function updateSound(first = false) {
     $('.vol').classList.toggle('muted', !!v.muted);
   }
   requestAnimationFrame(() => {
-    const h = panel.scrollHeight + 2;
+    const h = contentHeight();
     if (first || h !== soundHeight) { soundHeight = h; api.panelSize(h); }
   });
 }
@@ -1035,7 +1140,7 @@ function renderMenu() {
     el.addEventListener('mouseenter', () => setMenuFocus([...panel.querySelectorAll('.mi:not(.off)')].indexOf(el)));
     el.addEventListener('click', () => activateMenuItem(el));
   });
-  requestAnimationFrame(() => api.menuSize(panel.scrollHeight + 2));
+  requestAnimationFrame(() => api.menuSize(contentHeight()));
 }
 
 function activateMenuItem(el) {

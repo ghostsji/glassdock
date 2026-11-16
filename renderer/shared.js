@@ -286,6 +286,7 @@ function fmtRate(bps, short = false) {
 
 // ---- quick settings icons
 Object.assign(GLYPHS, {
+  edit: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   wifi: '<path d="M2.5 8.5a13.5 13.5 0 0 1 19 0"/><path d="M5.5 11.8a9 9 0 0 1 13 0"/><path d="M8.5 15a4.8 4.8 0 0 1 7 0"/><circle cx="12" cy="18.6" r="1.3" fill="currentColor" stroke="none"/>',
   wifiOff: '<path d="M2.5 8.5a13.5 13.5 0 0 1 19 0" opacity=".35"/><path d="M5.5 11.8a9 9 0 0 1 13 0" opacity=".35"/><path d="M8.5 15a4.8 4.8 0 0 1 7 0" opacity=".35"/><path d="M4 4l16 16"/>',
   bluetooth: '<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>',
