@@ -1,7 +1,7 @@
 # GlassDock
 
 A free, open-source glass dock for Windows 10/11 with live widgets:
-**pinned apps, calendar events, now playing, volume, a Yr weather forecast, clock + calendar, CPU, RAM, disk, battery, uptime, and Claude / ChatGPT / Grok usage limits.**
+**pinned apps, calendar events, now playing, volume, network, a Yr weather forecast, clock + calendar, CPU, RAM, disk, battery, uptime, and Claude / ChatGPT / Grok usage limits.**
 
 - Real Windows acrylic glass, in 5 styles (Glass, Frost, Midnight, Black, White)
 - Floating pill or full width, on **any edge (top, bottom, left or right) of any monitor**, in 3 sizes
@@ -10,6 +10,18 @@ A free, open-source glass dock for Windows 10/11 with live widgets:
 - Hides itself when a game or video goes fullscreen
 - Weather from [Open-Meteo](https://open-meteo.com): free, no account and no API key
 - No accounts and no telemetry. The only network traffic is weather lookups.
+
+## Network
+
+- On the dock: a Wi-Fi signal icon (or Ethernet, or offline), the network name, and live
+  download/upload speeds. An amber dot means you're connected but have no internet.
+- Click it for the Network panel: signal strength, a live speed graph for the last 2 minutes,
+  data used since GlassDock started, IP address and router (with copy buttons), link speed and
+  adapter, plus buttons for Windows' **Wi-Fi networks** list and **Network settings**.
+- VPN and virtual adapters (Tailscale, WireGuard, Hyper-V, WSL…) aren't counted twice in the
+  speeds, and a wired connection is preferred when both are up, like Windows does.
+- Windows 11 hides the Wi-Fi name from apps unless location access is on. The panel offers a
+  button to allow it. Without it, the dock shows "Wi-Fi".
 
 ## Weather forecast from Yr
 

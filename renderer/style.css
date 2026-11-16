@@ -451,3 +451,26 @@ body[data-style="frost"] .cold, body[data-style="white"] .cold { color: #1C7FD6;
 .yr-mm small { font-weight: 400; color: var(--muted); }
 .yr-link { color: var(--accent); cursor: pointer; }
 .yr-credit { border-top: 1px solid var(--border); padding-top: 8px; line-height: 1.4; }
+
+/* ------------------------------------------------------------ network */
+.w.network { gap: 7px; }
+.nettext { max-width: 150px; }
+.nettext .es { font-variant-numeric: tabular-nums; white-space: pre; }
+.net-off { color: var(--warn); display: inline-flex; }
+body[data-vertical="1"] .w.network .nettext .et { display: none; }
+body[data-vertical="1"] .w.network .nettext { align-items: center; }
+#panel.net-mode { gap: 12px; }
+.net-big { width: 50px; height: 50px; border-radius: 14px; background: var(--hover); display: flex; align-items: center; justify-content: center; flex: none; color: var(--accent); }
+.net-big.off { color: var(--warn); }
+.net-signal { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.net-signal b { font-size: 18px; }
+.net-graph { display: flex; flex-direction: column; gap: 6px; }
+.net-rate { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.net-rate i { width: 10px; height: 3px; border-radius: 2px; }
+.net-rate i.dl { background: var(--accent); }
+.net-rate i.ul { background: #B07CF0; }
+.net-rows { display: flex; flex-direction: column; }
+.net-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 5px 0; border-top: 1px solid var(--border); min-height: 30px; }
+.net-row:first-child { border-top: 0; }
+.net-v { display: inline-flex; align-items: center; gap: 4px; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.net-copy { width: 22px; height: 22px; }

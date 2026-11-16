@@ -1,4 +1,4 @@
-/* global esc, applyTheme, glyph, yrIcon, yrTemp, mediaIcon, speakerIcon, mediaPosition, icons, fmtTokens, fmtIn, liveWindow, weatherIcon, ring, fmtUptime, fmtTime, tempStr */
+/* global esc, applyTheme, glyph, yrIcon, yrTemp, netIcon, fmtRate, mediaIcon, speakerIcon, mediaPosition, icons, fmtTokens, fmtIn, liveWindow, weatherIcon, ring, fmtUptime, fmtTime, tempStr */
 const api = window.dock;
 const row = document.getElementById('row');
 let state = null;
@@ -7,10 +7,19 @@ const vertical = () => state.config.edge === 'left' || state.config.edge === 'ri
 const AI_IDS = ['claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'];
 
 // Which panel each widget opens.
-const PANEL_FOR = { yr: 'yr', events: 'calendar', media: 'sound', volume: 'sound', clock: 'calendar', weather: 'weather', cpu: 'system', ram: 'system', disk: 'system', battery: 'system', uptime: 'system', claude: 'ai', codex: 'ai', gemini: 'ai', 'claude-web': 'ai', 'chatgpt-web': 'ai', 'grok-web': 'ai' };
+const PANEL_FOR = { network: 'network', yr: 'yr', events: 'calendar', media: 'sound', volume: 'sound', clock: 'calendar', weather: 'weather', cpu: 'system', ram: 'system', disk: 'system', battery: 'system', uptime: 'system', claude: 'ai', codex: 'ai', gemini: 'ai', 'claude-web': 'ai', 'chatgpt-web': 'ai', 'grok-web': 'ai' };
 
 // ---------------------------------------------------------------- widget renderers
 const render = {
+  // Network: signal icon, the network's name and live speeds (or why you're offline)
+  network() {
+    const n = state.network;
+    if (!n) return '';
+    const name = n.type === 'none' ? 'Offline' : n.nameHidden ? 'Wi-Fi' : n.name;
+    const line2 = n.type === 'none' ? 'Not connected' : !n.online ? 'No internet'
+      : `↓ ${fmtRate(n.down, true)}  ↑ ${fmtRate(n.up, true)}`;
+    return `<span class="${n.online ? '' : 'net-off'}">${netIcon(n, 18)}</span><span class="evtext nettext"><span class="et">${esc(name)}</span><span class="es">${esc(line2)}</span></span>`;
+  },
   // Yr: symbol + temperature, plus what's coming ("Rain from 14:00", "Dry next 6 h", or today's high/low)
   yr() {
     const y = state.yr;
@@ -223,7 +232,7 @@ function visibleWidgets() {
   return state.config.widgets.filter((id) => {
     if (!render[id]) return false;
     if (id === 'battery') return hasBattery();
-    if (AI_IDS.includes(id) || ['media', 'volume', 'events'].includes(id)) return render[id]() !== ''; // hide when unavailable
+    if (AI_IDS.includes(id) || ['media', 'volume', 'events', 'network'].includes(id)) return render[id]() !== ''; // hide when unavailable
     return true;
   });
 }
@@ -432,6 +441,11 @@ async function init() {
   api.onConfig((c) => { state.config = c; applyTheme(c); build(); });
   api.onSaver((v) => { state.saver = v; document.body.dataset.saver = v ? '1' : '0'; build(); });
   api.onYr((y) => { state.yr = y; update(['yr']); });
+  api.onNetwork((n) => {
+    const before = visibleWidgets().join();
+    state.network = n;
+    if (visibleWidgets().join() !== before) build(); else update(['network']);
+  });
   api.onEvents((ev) => {
     const before = visibleWidgets().join();
     state.events = ev;

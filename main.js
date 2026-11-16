@@ -33,6 +33,7 @@ const STYLES = {
 const WIDGETS = [
   { id: 'apps', label: 'Pinned apps' },
   { id: 'media', label: 'Now playing' },
+  { id: 'network', label: 'Network' },
   { id: 'volume', label: 'Volume' },
   { id: 'events', label: 'Calendar events' },
   { id: 'yr', label: 'Weather forecast (Yr)' },
@@ -61,7 +62,7 @@ const DEFAULTS = {
   units: 'celsius',        // 'celsius' | 'fahrenheit'
   location: null,          // { name, admin, country, lat, lon }
   hideTaskbar: false,
-  widgets: ['apps', 'events', 'media', 'volume', 'yr', 'clock', 'cpu', 'ram', 'disk', 'battery', 'claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'],
+  widgets: ['apps', 'events', 'media', 'volume', 'network', 'yr', 'clock', 'cpu', 'ram', 'disk', 'battery', 'claude', 'codex', 'gemini', 'claude-web', 'chatgpt-web', 'grok-web'],
   web: { claude: false, chatgpt: false, grok: false }, // website accounts the user connected
   pinnedApps: [],          // [{ id, name, path } | { id, name, aumid }]
   showStart: true,         // Start button at the front of the apps group (Windows)
@@ -143,6 +144,7 @@ const publicState = () => ({
   weather,
   ai,
   appIcons,
+  network: netPublic,
   yr: yrPublic(),
   events: eventsPublic(),
   sound,
@@ -235,6 +237,7 @@ function hidePopup() {
 const PANELS = {
   calendar: { w: 340, h: 600 },
   yr: { w: 400, h: 620 },
+  network: { w: 340, h: 470 },
   weather: { w: 340, h: 430 },
   system: { w: 310, h: 300 },
   settings: { w: 330, h: 680 },
@@ -275,6 +278,7 @@ function openPanel(name, anchor) {
   if (name === 'ai') { refreshAi(); refreshWeb(false); }
 
   if (name === 'sound') pollSound(true);
+  if (name === 'network') pollNet(true);
   if (name === 'yr') refreshYr(true);
   panelAnchor = anchor;
   placePanel(spec.w, spec.h);
@@ -646,6 +650,79 @@ function pollRunning() {
     lastRunningJson = json;
     broadcast('running', { pinned, others });
   }
+}
+
+// ---------------------------------------------------------------- network
+let netPublic = null;
+let netPrev = null;        // { at, counters: { id: { rx, tx } } }
+const netHistory = [];     // [[down, up], ...] bytes/s, last 60 samples
+let netBusy = false;
+let netStartTotals = null; // counters when GlassDock started, for "used since startup"
+
+// Virtual adapters (VPN clients, Hyper-V, WSL, VirtualBox, VMware, Bluetooth PAN) shouldn't be
+// picked as "the" connection or counted twice in the speeds.
+const VIRTUAL = /virtual|vmware|hyper-v|vethernet|wsl|vbox|virtualbox|loopback|bluetooth|tap-|wintun|wireguard|tailscale|zerotier|npcap|teredo|isatap|pseudo/i;
+
+function pickPrimary(adapters) {
+  const real = adapters.filter((a) => !VIRTUAL.test(`${a.name} ${a.desc}`));
+  const withGw = real.filter((a) => a.gateway && a.gateway.length);
+  // Windows prefers a wired connection when both are up
+  return withGw.find((a) => a.type === 'Ethernet') || withGw[0] || real[0] || adapters[0] || null;
+}
+
+function netWanted() {
+  return media && !media.isDisabled() && dock && dock.isVisible() && (cfg.widgets.includes('network') || popupName === 'network');
+}
+
+async function pollNet(force = false) {
+  if (netBusy || (!force && !netWanted()) || !media || media.isDisabled()) return;
+  netBusy = true;
+  try {
+    const msg = await media.call('net');
+    const n = msg && msg.net;
+    if (!n) return;
+    const adapters = Array.isArray(n.adapters) ? n.adapters : [];
+    const now = Date.now();
+    const counters = Object.fromEntries(adapters.map((a) => [a.id, { rx: a.rx, tx: a.tx }]));
+    let down = 0, up = 0;
+    if (netPrev && now > netPrev.at) {
+      const dt = (now - netPrev.at) / 1000;
+      for (const a of adapters) {
+        const p = netPrev.counters[a.id];
+        if (!p || VIRTUAL.test(`${a.name} ${a.desc}`)) continue;
+        // counters can reset (adapter restarted): ignore negative steps
+        down += Math.max(0, a.rx - p.rx) / dt;
+        up += Math.max(0, a.tx - p.tx) / dt;
+      }
+      netHistory.push([Math.round(down), Math.round(up)]);
+      if (netHistory.length > 60) netHistory.shift();
+    }
+    netPrev = { at: now, counters };
+    const real = adapters.filter((a) => !VIRTUAL.test(`${a.name} ${a.desc}`));
+    const totals = { rx: real.reduce((t, a) => t + a.rx, 0), tx: real.reduce((t, a) => t + a.tx, 0) };
+    if (!netStartTotals) netStartTotals = totals;
+    const primary = pickPrimary(adapters);
+    const wifi = primary && primary.type === 'Wireless80211' ? n.wifi : null;
+    const type = !primary ? 'none' : primary.type === 'Wireless80211' ? 'wifi'
+      : /Ethernet|GigabitEthernet|FastEthernet/i.test(primary.type) ? 'ethernet'
+        : /Wwan|Ppp/i.test(primary.type) ? 'cellular' : 'other';
+    netPublic = {
+      online: net.isOnline() && !!(primary && primary.gateway && primary.gateway.length),
+      type,
+      name: wifi && wifi.ssid ? wifi.ssid : primary ? (type === 'ethernet' ? 'Ethernet' : primary.name) : 'Not connected',
+      signal: wifi && Number.isFinite(wifi.signal) ? wifi.signal : null,
+      nameHidden: !!(wifi && wifi.locationBlocked),
+      ip: primary && primary.ipv4 && primary.ipv4[0] || null,
+      gateway: primary && primary.gateway && primary.gateway[0] || null,
+      linkSpeed: primary ? primary.speed : null,
+      adapter: primary ? primary.desc : null,
+      down, up,
+      history: [...netHistory],
+      session: { rx: Math.max(0, totals.rx - netStartTotals.rx), tx: Math.max(0, totals.tx - netStartTotals.tx) },
+      others: adapters.filter((a) => a !== primary).map((a) => ({ name: a.name, desc: a.desc, ip: a.ipv4 && a.ipv4[0] || null })),
+    };
+    broadcast('network', netPublic);
+  } catch { /* helper starting up */ } finally { netBusy = false; }
 }
 
 // ---------------------------------------------------------------- Yr forecast (MET Norway)
@@ -1266,6 +1343,7 @@ const TIMERS = {        //  [work,              normal ms,  battery saver ms]
   stats: () => [sampleStats, 2000, 10000],
   running: () => (running ? [pollRunning, 1500, 5000] : null),
   sound: () => (media ? [pollSound, 1000, 4000] : null),
+  network: () => (media ? [pollNet, 2000, 6000] : null),
   ai: () => [refreshAi, 60 * 1000, 5 * 60 * 1000],
   web: () => [() => refreshWeb(true), 5 * 60 * 1000, 15 * 60 * 1000],
   weather: () => [refreshWeather, 15 * 60 * 1000, 30 * 60 * 1000],
@@ -1375,6 +1453,9 @@ ipcMain.on('open-event-link', (_e, key) => {
   if (ev && ev.link) shell.openExternal(ev.link);
 });
 ipcMain.on('yr-refresh', () => refreshYr(true));
+// Windows' own network screens only.
+const NET_PAGES = { wifi: 'ms-availablenetworks:', settings: 'ms-settings:network-status', location: 'ms-settings:privacy-location', adapters: 'ms-settings:network-advancedsettings' };
+ipcMain.on('net-open', (_e, which) => { const url = NET_PAGES[which]; if (url) { hidePopup(); shell.openExternal(url); } });
 ipcMain.on('yr-open', () => {
   if (!cfg.location) return;
   hidePopup();

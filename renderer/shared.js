@@ -1,5 +1,5 @@
 // Helpers shared by the dock and the popup panels.
-/* exported esc, applyTheme, weatherInfo, weatherIcon, icons, fmtBytes, fmtUptime, fmtTime, ring, tempStr, fmtTokens, fmtIn, liveWindow, glyph, mediaIcon, speakerIcon, fmtDuration, mediaPosition, yrIcon, yrText, yrTemp, yrWind */
+/* exported esc, applyTheme, weatherInfo, weatherIcon, icons, fmtBytes, fmtUptime, fmtTime, ring, tempStr, fmtTokens, fmtIn, liveWindow, glyph, mediaIcon, speakerIcon, fmtDuration, mediaPosition, yrIcon, yrText, yrTemp, yrWind, netIcon, fmtRate */
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -258,3 +258,28 @@ function yrIcon(symbol, size = 20) {
 // Units: MET always sends °C, m/s and mm.
 function yrTemp(c, units) { return units === 'fahrenheit' ? (c * 9) / 5 + 32 : c; }
 function yrWind(ms, units) { return units === 'fahrenheit' ? `${Math.round(ms * 2.237)} mph` : `${Math.round(ms)} m/s`; }
+
+// ---- network
+// Wi-Fi fan with 0-4 lit bars, an Ethernet plug, or a crossed-out globe when offline.
+function netIcon(n, size = 18) {
+  const svg = (inner) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+  if (!n || n.type === 'none') {
+    return svg('<path d="M3.5 9a12 12 0 0 1 17 0" opacity=".35"/><path d="M6.5 12.5a7.5 7.5 0 0 1 11 0" opacity=".35"/><path d="M4 4l16 16"/>');
+  }
+  if (n.type === 'ethernet' || n.type === 'other') {
+    return svg(`<rect x="4" y="9" width="16" height="10" rx="2"/><path d="M8 9V6h8v3M8 13v2M12 13v2M16 13v2"/>${n.online ? '' : '<circle cx="19" cy="6" r="3" fill="var(--warn)" stroke="none"/>'}`);
+  }
+  const bars = n.signal == null ? 4 : n.signal >= 75 ? 4 : n.signal >= 50 ? 3 : n.signal >= 25 ? 2 : 1;
+  const arc = (k, d) => `<path d="${d}" opacity="${k <= bars ? 1 : 0.28}"/>`;
+  return svg(`${arc(4, 'M2.5 8.5a13.5 13.5 0 0 1 19 0')}${arc(3, 'M5.5 11.8a9 9 0 0 1 13 0')}${arc(2, 'M8.5 15a4.8 4.8 0 0 1 7 0')}<circle cx="12" cy="18.6" r="1.4" fill="currentColor" stroke="none" opacity="${bars >= 1 ? 1 : 0.28}"/>${n.online ? '' : '<circle cx="19.5" cy="18.5" r="3" fill="var(--warn)" stroke="none"/>'}`);
+}
+
+function fmtRate(bps, short = false) {
+  if (!Number.isFinite(bps) || bps < 1) return short ? '0' : '0 KB/s';
+  const u = short ? ['B', 'K', 'M', 'G'] : ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  let i = 0;
+  while (bps >= 1000 && i < u.length - 1) { bps /= 1024; i++; }
+  if (i === 0 && !short) { return `${(bps / 1024).toFixed(1)} KB/s`; }
+  const v = bps >= 100 ? Math.round(bps) : bps.toFixed(1);
+  return short ? `${v}${u[i]}` : `${v} ${u[i]}`;
+}

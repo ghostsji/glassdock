@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('dock', {
   onSound: listen('sound'),
   onEvents: listen('events'),
   onYr: listen('yr'),
+  onNetwork: listen('network'),
+  netOpen: (which) => ipcRenderer.send('net-open', which),
   yrRefresh: () => ipcRenderer.send('yr-refresh'),
   openYr: () => ipcRenderer.send('yr-open'),
   calAdd: (url) => ipcRenderer.invoke('cal-add', url),

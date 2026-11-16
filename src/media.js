@@ -130,6 +130,49 @@ function Get-Media([bool]$forceThumb) {
   }
 }
 
+# ---- network: adapter counters (.NET, in-process) and Wi-Fi name/signal (netsh, cached 10 s)
+$script:wifiAt = [DateTime]::MinValue
+$script:wifi = $null
+function Get-Wifi {
+  if (([DateTime]::Now - $script:wifiAt).TotalSeconds -lt 10) { return $script:wifi }
+  $script:wifiAt = [DateTime]::Now
+  $w = $null
+  try {
+    $out = @(netsh wlan show interfaces 2>$null)
+    $ssidLine = $out | Where-Object { $_ -match '^\s*SSID\s*:' } | Select-Object -First 1
+    $sigLine = $out | Where-Object { $_ -match ':\s*\d+\s*%\s*$' } | Select-Object -First 1
+    $w = @{
+      ssid = $(if ($ssidLine) { ($ssidLine -replace '^\s*SSID\s*:\s*', '').Trim() } else { '' })
+      signal = $(if ($sigLine) { [int]($sigLine -replace '^.*:\s*(\d+)\s*%\s*$', '$1') } else { $null })
+      text = (($out -join ' ') -replace '\s+', ' ')
+    }
+    # Windows 11 hides the Wi-Fi name from apps unless location access is allowed
+    $w.locationBlocked = [bool]((-not $w.ssid) -and ($w.text -match 'location|ms-settings:privacy'))
+    $w.Remove('text')
+  } catch { $w = $null }
+  $script:wifi = $w
+  return $w
+}
+
+function Get-Net {
+  $list = @()
+  foreach ($i in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+    try {
+      if ($i.OperationalStatus -ne 'Up') { continue }
+      $type = [string]$i.NetworkInterfaceType
+      if ($type -eq 'Loopback' -or $type -eq 'Tunnel') { continue }
+      $st = $i.GetIPStatistics()
+      $p = $i.GetIPProperties()
+      $ipv4 = @($p.UnicastAddresses | Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' } | ForEach-Object { $_.Address.ToString() })
+      $gw = @($p.GatewayAddresses | ForEach-Object { $_.Address.ToString() } | Where-Object { $_ -and $_ -ne '0.0.0.0' -and $_ -notmatch ':' })
+      $list += @{ id = $i.Id; name = $i.Name; desc = $i.Description; type = $type; speed = [int64]$i.Speed;
+        rx = [int64]$st.BytesReceived; tx = [int64]$st.BytesSent; ipv4 = $ipv4; gateway = $gw }
+    } catch {}
+  }
+  $hasWifi = @($list | Where-Object { $_.type -eq 'Wireless80211' }).Count -gt 0
+  return @{ adapters = $list; wifi = $(if ($hasWifi) { Get-Wifi } else { $null }) }
+}
+
 function With-Session($fn) {
   if (-not $mgr) { return }
   $s = $mgr.GetCurrentSession()
@@ -142,6 +185,12 @@ while ($true) {
   $req = $null
   try { $req = $line | ConvertFrom-Json } catch { continue }
   $res = @{ id = $req.id; ok = $true }
+  if ($req.cmd -eq 'net') {
+    try { $res.net = Get-Net } catch { $res.ok = $false; $res.error = $_.Exception.Message }
+    [Console]::Out.WriteLine(($res | ConvertTo-Json -Compress -Depth 5))
+    [Console]::Out.Flush()
+    continue
+  }
   try {
     switch ($req.cmd) {
       'volume' { [GdAudio]::SetVolume([float]$req.arg); if ([GdAudio]::GetMute()) { [GdAudio]::SetMute($false) } }

@@ -1,4 +1,4 @@
-/* global esc, applyTheme, weatherInfo, weatherIcon, icons, fmtBytes, fmtUptime, fmtTime, tempStr, fmtTokens, fmtIn, liveWindow, glyph, mediaIcon, speakerIcon, fmtDuration, mediaPosition, yrIcon, yrText, yrTemp, yrWind */
+/* global esc, applyTheme, weatherInfo, weatherIcon, icons, fmtBytes, fmtUptime, fmtTime, tempStr, fmtTokens, fmtIn, liveWindow, glyph, mediaIcon, speakerIcon, fmtDuration, mediaPosition, yrIcon, yrText, yrTemp, yrWind, netIcon, fmtRate */
 const api = window.dock;
 const panel = document.getElementById('panel');
 let state = null;
@@ -213,6 +213,76 @@ function renderCalendars() {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
   panel.querySelector('.calhelp').addEventListener('toggle', () => requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2)));
   requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+}
+
+// ---------------------------------------------------------------- network
+function renderNetwork() {
+  const n = state.network;
+  panel.classList.add('net-mode');
+  if (!n) { panel.innerHTML = '<div class="muted">Reading your network…</div>'; return; }
+  const name = n.type === 'none' ? 'Not connected' : n.nameHidden ? 'Wi-Fi (name hidden)' : n.name;
+  const status = n.type === 'none' ? 'No network adapter is connected'
+    : n.online ? (n.type === 'wifi' ? 'Connected · Internet access' : 'Connected · Internet access')
+      : 'Connected, but no internet';
+  const link = n.linkSpeed > 0 ? (n.linkSpeed >= 1e9 ? `${(n.linkSpeed / 1e9).toFixed(n.linkSpeed % 1e9 ? 1 : 0)} Gbps` : `${Math.round(n.linkSpeed / 1e6)} Mbps`) : '–';
+  const fmtBytes2 = (b) => fmtBytes(b);
+  const row = (k, v, copy) => `<div class="net-row"><span class="muted">${k}</span><span class="net-v">${esc(v || '–')}${copy && v ? ` <button class="iconbtn net-copy" data-copy="${esc(v)}" title="Copy">${glyph('restore', 13)}</button>` : ''}</span></div>`;
+  panel.innerHTML = `
+    <div class="row" style="gap:12px">
+      <div class="net-big ${n.online ? '' : 'off'}">${netIcon(n, 30)}</div>
+      <div class="grow" style="min-width:0">
+        <div class="title ellipsis">${esc(name)}</div>
+        <div class="small ${n.online ? 'muted' : ''}" style="${n.online ? '' : 'color:var(--warn)'}">${esc(status)}</div>
+      </div>
+      ${n.signal != null ? `<div class="net-signal" title="Signal strength"><b>${n.signal}%</b><span class="small muted">signal</span></div>` : ''}
+    </div>
+    ${n.nameHidden ? `<div class="card small row" style="gap:8px">${glyph('shield', 16)}<span class="grow">Windows hides the Wi-Fi name from apps until location access is on.</span><button class="btn small ghost" data-open="location">Allow</button></div>` : ''}
+    <div class="card net-graph">
+      <div class="row between">
+        <span class="net-rate"><i class="dl"></i>↓ <b id="netDown">${fmtRate(n.down)}</b></span>
+        <span class="net-rate"><i class="ul"></i>↑ <b id="netUp">${fmtRate(n.up)}</b></span>
+      </div>
+      <div id="netSpark">${netSpark(n.history)}</div>
+      <div class="small muted">Last 2 minutes · since GlassDock started: ↓ ${fmtBytes2(n.session.rx)}  ↑ ${fmtBytes2(n.session.tx)}</div>
+    </div>
+    <div class="net-rows">
+      ${row('IP address', n.ip, true)}
+      ${row('Router', n.gateway, true)}
+      ${row('Link speed', link)}
+      ${row('Adapter', n.adapter)}
+    </div>
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      <button class="btn small" data-open="wifi">${glyph('apps', 14)}&nbsp;Wi-Fi networks</button>
+      <button class="btn small ghost" data-open="settings">${glyph('gear', 14)}&nbsp;Network settings</button>
+    </div>`;
+  panel.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => api.netOpen(b.dataset.open); });
+  panel.querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); b.innerHTML = glyph('check', 13); setTimeout(() => { if (b.isConnected) b.innerHTML = glyph('restore', 13); }, 1200); } catch {}
+    };
+  });
+  requestAnimationFrame(() => api.panelSize(panel.scrollHeight + 2));
+}
+
+// Live speeds update in place (no redraw), so hovering and copying aren't interrupted.
+function updateNetwork() {
+  const n = state.network;
+  if (!n || !panel.querySelector('#netSpark')) { renderNetwork(); return; }
+  panel.querySelector('#netDown').textContent = fmtRate(n.down);
+  panel.querySelector('#netUp').textContent = fmtRate(n.up);
+  panel.querySelector('#netSpark').innerHTML = netSpark(n.history);
+}
+
+function netSpark(history) {
+  const W = 300, H = 64;
+  const h = history && history.length > 1 ? history : [[0, 0], [0, 0]];
+  const max = Math.max(64 * 1024, ...h.map(([d, u]) => Math.max(d, u)));
+  const pts = (k) => h.map((v, i) => `${((i / (h.length - 1)) * W).toFixed(1)},${(H - 2 - (v[k] / max) * (H - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">
+    <polygon points="0,${H} ${pts(0)} ${W},${H}" fill="var(--accent)" opacity=".16"/>
+    <polyline points="${pts(0)}" fill="none" stroke="var(--accent)" stroke-width="1.8" vector-effect="non-scaling-stroke"/>
+    <polyline points="${pts(1)}" fill="none" stroke="#B07CF0" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>
+  </svg>`;
 }
 
 // ---------------------------------------------------------------- Yr forecast
@@ -985,11 +1055,11 @@ function renderSettings() {
 }
 
 // ---------------------------------------------------------------- routing
-const RENDER = { calendar: renderCalendar, weather: renderWeather, system: renderSystem, settings: renderSettings, ai: renderAi, apps: renderApps, menu: renderMenu, sound: renderSound, yr: renderYr };
+const RENDER = { calendar: renderCalendar, weather: renderWeather, system: renderSystem, settings: renderSettings, ai: renderAi, apps: renderApps, menu: renderMenu, sound: renderSound, yr: renderYr, network: renderNetwork };
 
 function show() {
   if (current !== 'calendar') clearInterval(clockTimer);
-  panel.classList.remove('scroll', 'noscroll', 'menu-mode', 'sound-mode', 'yr-mode');
+  panel.classList.remove('scroll', 'noscroll', 'menu-mode', 'sound-mode', 'yr-mode', 'net-mode');
   (RENDER[current] || renderSettings)();
 }
 
@@ -1018,6 +1088,12 @@ api.onConfig((c) => {
   if (document.activeElement?.tagName !== 'INPUT') show();
 });
 api.onStats((s) => { if (state) { state.stats = s; if (current === 'system') show(); } });
+api.onNetwork((n) => {
+  if (!state) return;
+  const typeChanged = !state.network || !n || state.network.type !== n.type || state.network.name !== n.name || state.network.online !== n.online || state.network.ip !== n.ip;
+  state.network = n;
+  if (current === 'network') { if (typeChanged) renderNetwork(); else updateNetwork(); }
+});
 api.onYr((y) => { if (!state) return; state.yr = y; if (current === 'yr') show(); });
 api.onEvents((ev) => { if (!state) return; state.events = ev; if (current === 'calendar' && document.activeElement?.tagName !== 'INPUT') show(); });
 api.onSound((snd) => { if (!state) return; state.sound = snd; if (current === 'sound') updateSound(); });
