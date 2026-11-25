@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Canvas</string>
+    <string name="settings_name">Canvas Settings</string>
+    <string name="badge_service">Canvas notification badges</string>
+    <string name="a11y_service">Canvas gestures</string>
+    <string name="a11y_description">Lets Canvas lock the screen, open recent apps and show the power menu from home-screen gestures. Canvas does not read or collect any screen content.</string>
+</resources>
