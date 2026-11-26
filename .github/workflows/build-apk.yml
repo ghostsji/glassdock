@@ -17,12 +17,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check the signing password is set
+        id: key
         env:
           CANVAS_KEY_PASSWORD: ${{ secrets.CANVAS_KEY_PASSWORD }}
         run: |
-          if [ -z "$CANVAS_KEY_PASSWORD" ]; then
-            echo "::error::Add the CANVAS_KEY_PASSWORD secret: repo Settings > Secrets and variables > Actions > New repository secret."
-            exit 1
+          if [ -n "$CANVAS_KEY_PASSWORD" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CANVAS_KEY_PASSWORD secret missing: the app will be compiled but not released."
           fi
 
       - uses: actions/setup-java@v4
@@ -39,6 +40,12 @@ jobs:
           CANVAS_KEY_PASSWORD: ${{ secrets.CANVAS_KEY_PASSWORD }}
           CANVAS_VERSION_CODE: ${{ github.run_number }}
         run: gradle assembleLiteRelease assembleFullRelease --stacktrace
+
+      - name: Stop here without the signing key
+        if: steps.key.outputs.ok != 'true'
+        run: |
+          echo "::error::Compiled OK, but nothing was released. Add the CANVAS_KEY_PASSWORD secret: repo Settings > Secrets and variables > Actions."
+          exit 1
 
       - name: Collect APKs
         run: |

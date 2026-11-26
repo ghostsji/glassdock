@@ -55,6 +55,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -495,26 +497,45 @@ private fun GesturesPage(vm: LauncherViewModel, host: SettingsHost, cfg: Launche
                 }
             }
         }
+        SectionHeader("Swipes")
         GestureRow(vm, "Swipe up", g.swipeUp) { b -> set { it.copy(swipeUp = b) } }
+        if (g.swipeUp.action == ActionType.OPEN_DRAWER) {
+            SwitchRow("Drawer follows your finger", "Drag the app drawer up instead of it popping open", g.swipeUpFollowsFinger) { v ->
+                set { it.copy(swipeUpFollowsFinger = v) }
+            }
+        }
         GestureRow(vm, "Swipe down", g.swipeDown) { b -> set { it.copy(swipeDown = b) } }
-        GestureRow(vm, "Double tap", g.doubleTap) { b -> set { it.copy(doubleTap = b) } }
         GestureRow(vm, "Two-finger swipe up", g.twoFingerSwipeUp) { b -> set { it.copy(twoFingerSwipeUp = b) } }
         GestureRow(vm, "Two-finger swipe down", g.twoFingerSwipeDown) { b -> set { it.copy(twoFingerSwipeDown = b) } }
+        SectionHeader("Taps & presses")
+        GestureRow(vm, "Double tap", g.doubleTap) { b -> set { it.copy(doubleTap = b) } }
+        GestureRow(vm, "Two-finger double tap", g.twoFingerDoubleTap) { b -> set { it.copy(twoFingerDoubleTap = b) } }
+        GestureRow(vm, "Long-press empty space", g.longPress) { b -> set { it.copy(longPress = b) } }
+        SectionHeader("Pinch")
+        GestureRow(vm, "Pinch in", g.pinchIn) { b -> set { it.copy(pinchIn = b) } }
+        GestureRow(vm, "Pinch out", g.pinchOut) { b -> set { it.copy(pinchOut = b) } }
+        SectionHeader("Buttons & clock")
         GestureRow(vm, "Home button (while on home)", g.homeButton) { b -> set { it.copy(homeButton = b) } }
-        GestureRow(vm, "Tap the clock", g.clockTap, noneLabel = "Open alarms") { b -> set { it.copy(clockTap = b) } }
+        GestureRow(vm, "Tap the time", g.clockTap) { b -> set { it.copy(clockTap = b) } }
+        GestureRow(vm, "Tap the date", g.dateTap) { b -> set { it.copy(dateTap = b) } }
+        if (g.longPress.action != ActionType.HOME_MENU && g.pinchIn.action != ActionType.HOME_MENU) {
+            Text(
+                "Tip: the home screen menu (widgets, wallpaper, pages) isn't on any gesture right now. Canvas Settings is still in your app list.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun GestureRow(vm: LauncherViewModel, title: String, binding: GestureBinding, noneLabel: String? = null, onChange: (GestureBinding) -> Unit) {
+private fun GestureRow(vm: LauncherViewModel, title: String, binding: GestureBinding, onChange: (GestureBinding) -> Unit) {
     val apps by vm.drawerApps.collectAsState()
     var pickAction by remember { mutableStateOf(false) }
     var pickApp by remember { mutableStateOf(false) }
-    val actions = ActionType.entries.filter { Features.available(it) || it == binding.action }
     val summary = when (binding.action) {
         ActionType.LAUNCH_APP -> "Open " + (apps.firstOrNull { it.key == binding.appKey }?.label ?: "an app")
-        ActionType.NONE -> noneLabel ?: ActionType.NONE.label
-        else -> binding.action.label
+        else -> binding.action.label + if (!Features.available(binding.action)) " (Canvas Full only)" else ""
     }
     ListItem(
         headlineContent = { Text(title) },
@@ -523,10 +544,9 @@ private fun GestureRow(vm: LauncherViewModel, title: String, binding: GestureBin
         modifier = Modifier.clickable { pickAction = true }.padding(horizontal = 8.dp),
     )
     if (pickAction) {
-        val labels = actions.map { if (it == ActionType.NONE && noneLabel != null) noneLabel else it.label }
-        ChoiceDialog(title, labels, actions.indexOf(binding.action), { pickAction = false }) { i ->
+        ActionPickerDialog(title, binding.action, { pickAction = false }) { action ->
             pickAction = false
-            if (actions[i] == ActionType.LAUNCH_APP) pickApp = true else onChange(GestureBinding(actions[i]))
+            if (action == ActionType.LAUNCH_APP) pickApp = true else onChange(GestureBinding(action))
         }
     }
     if (pickApp) {
@@ -534,6 +554,54 @@ private fun GestureRow(vm: LauncherViewModel, title: String, binding: GestureBin
             onChange(GestureBinding(ActionType.LAUNCH_APP, apps[i].key)); pickApp = false
         }
     }
+}
+
+/** Every action, grouped by category, with a search box. */
+@Composable
+private fun ActionPickerDialog(title: String, current: ActionType, onDismiss: () -> Unit, onPick: (ActionType) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val groups = remember(query) {
+        ActionType.entries
+            .filter { Features.available(it) || it == current }
+            .filter { query.isBlank() || it.label.contains(query.trim(), ignoreCase = true) }
+            .groupBy { it.category }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, singleLine = true,
+                    placeholder = { Text("Search actions") }, leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                )
+                LazyColumn(Modifier.height(420.dp)) {
+                    groups.forEach { (category, actions) ->
+                        item(key = "h:" + category.name) {
+                            Text(
+                                category.title, style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(actions, key = { it.name }) { action ->
+                            Row(
+                                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                                    .clickable { onPick(action) }.padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = action == current, onClick = null)
+                                Spacer(Modifier.width(12.dp))
+                                Text(action.label)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 // ---------------------------------------------------------------- Search

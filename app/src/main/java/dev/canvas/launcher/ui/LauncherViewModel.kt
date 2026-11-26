@@ -74,6 +74,10 @@ class UiState {
     var drag by mutableStateOf<DragState?>(null)
     /** True from the moment an app is dragged out of the drawer until the drawer has closed. */
     var drawerSuppressed by mutableStateOf(false)
+    /** 0 = drawer closed, 1 = fully open. Follows the finger during a swipe-up. */
+    val drawerProgress = androidx.compose.animation.core.Animatable(0f)
+    /** True while a finger is dragging the drawer open. */
+    var drawerDragging by mutableStateOf(false)
     var currentPage by mutableIntStateOf(0)
     var pageRequest by mutableStateOf<Int?>(null)
 

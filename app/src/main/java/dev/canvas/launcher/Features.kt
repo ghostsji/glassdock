@@ -8,7 +8,7 @@ object Features {
     val full: Boolean = BuildConfig.FULL_FEATURES
 
     /** Gesture actions that need the accessibility service (full build only). */
-    val a11yActions = setOf(ActionType.LOCK_SCREEN, ActionType.RECENTS, ActionType.POWER_MENU, ActionType.SCREENSHOT)
+    val a11yActions = setOf(ActionType.LOCK_SCREEN, ActionType.RECENTS, ActionType.POWER_MENU, ActionType.SCREENSHOT, ActionType.SPLIT_SCREEN)
 
     fun available(action: ActionType) = full || action !in a11yActions
 }

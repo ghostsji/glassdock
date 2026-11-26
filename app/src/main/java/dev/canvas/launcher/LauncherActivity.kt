@@ -236,6 +236,17 @@ class LauncherActivity : ComponentActivity(), LauncherHost, InLauncherActions {
     override fun openDrawer() { vm.ui.searchOpen = false; vm.ui.drawerOpen = true }
     override fun openSearch() { vm.ui.drawerOpen = false; vm.ui.searchOpen = true }
     override fun goToFirstPage() { vm.ui.pageRequest = 0 }
+    override fun nextPage() {
+        val last = vm.layout.value.pages.lastIndex
+        vm.ui.pageRequest = (vm.ui.currentPage + 1).coerceAtMost(last)
+    }
+    override fun previousPage() { vm.ui.pageRequest = (vm.ui.currentPage - 1).coerceAtLeast(0) }
+    override fun openHomeMenu() { vm.ui.sheet = dev.canvas.launcher.ui.Sheet.HomeMenu }
+    override fun openWidgetPicker() { vm.ui.sheet = dev.canvas.launcher.ui.Sheet.WidgetPicker }
+    override fun toggleLayoutLock() {
+        vm.toggleLock()
+        Toast.makeText(this, if (vm.config.value.home.lockLayout) "Layout locked" else "Layout unlocked", Toast.LENGTH_SHORT).show()
+    }
     override fun launchAppByKey(key: String) = vm.launchKey(key, null, rootView)
 
     companion object {

@@ -115,6 +115,12 @@ import dev.canvas.launcher.data.WidgetItem
 import dev.canvas.launcher.system.Badges
 import dev.canvas.launcher.system.LongPressWidgetView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import android.os.SystemClock
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -180,18 +186,27 @@ fun LauncherScreen(vm: LauncherViewModel, host: LauncherHost) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = cfg.home.wallpaperDim)))
                 }
 
-                LaunchedEffect(ui.drawerOpen) { if (ui.drawerOpen) ui.drawerSuppressed = false }
-                val homeAlpha by animateFloatAsState(
-                    if ((ui.drawerOpen && !ui.drawerSuppressed) || ui.searchOpen) 0f else 1f, tween(duration), label = "home",
-                )
-                HomeScreen(vm, host, geometry, Modifier.graphicsLayer { alpha = homeAlpha })
+                // The drawer is driven by one 0..1 progress value, so it can follow a finger
+                // during swipe-up and animate the rest of the way when released.
+                LaunchedEffect(ui.drawerOpen) {
+                    if (ui.drawerOpen) ui.drawerSuppressed = false
+                    if (!ui.drawerDragging) ui.drawerProgress.animateTo(if (ui.drawerOpen) 1f else 0f, tween(duration))
+                }
+                val searchAlpha by animateFloatAsState(if (ui.searchOpen) 0f else 1f, tween(duration), label = "home")
+                HomeScreen(vm, host, geometry, Modifier.graphicsLayer {
+                    val p = if (ui.drawerSuppressed) 0f else ui.drawerProgress.value
+                    alpha = searchAlpha * (1f - p)
+                    val scale = 1f - 0.05f * p
+                    scaleX = scale; scaleY = scale
+                })
 
-                AnimatedVisibility(
-                    visible = ui.drawerOpen,
-                    enter = slideInVertically(tween(duration)) { it / 4 } + fadeIn(tween(duration)),
-                    exit = slideOutVertically(tween(duration)) { it / 4 } + fadeOut(tween(duration)),
-                ) {
-                    AppDrawer(vm, host, geometry, Modifier.graphicsLayer { alpha = if (ui.drawerSuppressed) 0f else 1f })
+                val drawerVisible by remember { derivedStateOf { ui.drawerOpen || ui.drawerProgress.value > 0.001f } }
+                if (drawerVisible) {
+                    AppDrawer(vm, host, geometry, Modifier.graphicsLayer {
+                        val p = ui.drawerProgress.value
+                        alpha = if (ui.drawerSuppressed) 0f else p
+                        translationY = (1f - p) * size.height * 0.35f
+                    })
                 }
 
                 AnimatedVisibility(
@@ -302,21 +317,40 @@ private fun HomeScreen(vm: LauncherViewModel, host: LauncherHost, geometry: Drop
     }
 }
 
-/** Swipes (one and two fingers), double tap and long-press on empty space. */
+/**
+ * Home-screen gestures: one- and two-finger swipes, pinch in/out, double tap,
+ * two-finger double tap and long-press on empty space. Swipe-up can drag the drawer open.
+ */
 @Composable
 private fun Modifier.homeGestures(vm: LauncherViewModel, host: LauncherHost): Modifier {
     val cfg = LocalConfig.current
     val gestures by rememberUpdatedState(cfg.gestures)
-    val threshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val density = LocalDensity.current
+    val threshold = with(density) { 64.dp.toPx() }
+    val openDistance = with(density) { 280.dp.toPx() }
+    val flingVelocity = with(density) { 600.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val lastTwoFingerTap = remember { longArrayOf(0L) }
+    val ui = vm.ui
     return this
         .pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                val slop = viewConfiguration.touchSlop
+                val tracker = VelocityTracker()
+                tracker.addPosition(down.uptimeMillis, down.position)
                 var maxPointers = 1
                 val start = HashMap<Long, Offset>()
                 start[down.id.value] = down.position
                 val last = HashMap<Long, Offset>(start)
                 var consumedVertical = false
+                var pinchStart = 0f
+                var pinchNow = 0f
+                var following = false
+                var progress = 0f
+                val canFollow = gestures.swipeUpFollowsFinger && gestures.swipeUp.action == ActionType.OPEN_DRAWER &&
+                    !ui.drawerOpen && !ui.searchOpen && ui.drag == null && ui.sheet == null
+
                 while (true) {
                     val ev = awaitPointerEvent()
                     ev.changes.forEach { c ->
@@ -324,15 +358,77 @@ private fun Modifier.homeGestures(vm: LauncherViewModel, host: LauncherHost): Mo
                         if (c.pressed) last[c.id.value] = c.position
                         if (c.isConsumed && abs(c.position.y - c.previousPosition.y) > abs(c.position.x - c.previousPosition.x)) consumedVertical = true
                     }
-                    maxPointers = maxOf(maxPointers, ev.changes.count { it.pressed })
+                    val pressed = ev.changes.filter { it.pressed }
+                    maxPointers = maxOf(maxPointers, pressed.size)
+                    if (pressed.size >= 2) {
+                        val d = (pressed[0].position - pressed[1].position).getDistance()
+                        if (pinchStart == 0f) pinchStart = d
+                        pinchNow = d
+                        // Multi-finger gestures shouldn't also count as taps, long-presses or page swipes.
+                        ev.changes.forEach { it.consume() }
+                    }
+                    val main = ev.changes.firstOrNull { it.id == down.id }
+                    if (main != null && main.pressed) tracker.addPosition(main.uptimeMillis, main.position)
+
+                    if (canFollow && !following && maxPointers == 1 && main != null && main.pressed && !consumedVertical) {
+                        val dy = main.position.y - down.position.y
+                        val dx = main.position.x - down.position.x
+                        if (-dy > slop * 2 && -dy > abs(dx) * 1.4f) {
+                            following = true
+                            ui.drawerDragging = true
+                        }
+                    }
+                    if (following) {
+                        if (maxPointers > 1 || ui.drag != null) {
+                            following = false
+                            ui.drawerDragging = false
+                            scope.launch { ui.drawerProgress.animateTo(0f) }
+                        } else if (main != null && main.pressed) {
+                            main.consume()
+                            progress = ((down.position.y - main.position.y) / openDistance).coerceIn(0f, 1f)
+                            val p = progress
+                            scope.launch { ui.drawerProgress.snapTo(p) }
+                        }
+                    }
                     if (ev.changes.none { it.pressed }) break
                 }
-                if (consumedVertical || vm.ui.drag != null) return@awaitEachGesture
+
+                // Finger-following drawer: open if dragged far enough or flung upwards.
+                if (following) {
+                    val vy = tracker.calculateVelocity().y
+                    val open = vy < -flingVelocity || (progress > 0.35f && vy < flingVelocity)
+                    ui.drawerDragging = false
+                    ui.drawerOpen = open
+                    scope.launch {
+                        ui.drawerProgress.animateTo(if (open) 1f else 0f, spring(stiffness = Spring.StiffnessMediumLow))
+                    }
+                    return@awaitEachGesture
+                }
+                if (consumedVertical || ui.drag != null) return@awaitEachGesture
+
+                // Pinch in / out.
+                if (maxPointers >= 2 && pinchStart > 0f) {
+                    val ratio = pinchNow / pinchStart
+                    if (ratio < 0.7f) { host.perform(gestures.pinchIn); return@awaitEachGesture }
+                    if (ratio > 1.4f) { host.perform(gestures.pinchOut); return@awaitEachGesture }
+                }
+
                 val dys = start.keys.mapNotNull { id -> last[id]?.let { it.y - start[id]!!.y } }
                 val dxs = start.keys.mapNotNull { id -> last[id]?.let { it.x - start[id]!!.x } }
                 if (dys.isEmpty()) return@awaitEachGesture
                 val dy = dys.average().toFloat()
                 val dx = dxs.average().toFloat()
+
+                // Two-finger double tap.
+                if (maxPointers == 2 && abs(dy) < slop * 2 && abs(dx) < slop * 2) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastTwoFingerTap[0] < 450) {
+                        lastTwoFingerTap[0] = 0L
+                        host.perform(gestures.twoFingerDoubleTap)
+                    } else lastTwoFingerTap[0] = now
+                    return@awaitEachGesture
+                }
+
                 if (abs(dy) < threshold || abs(dy) < abs(dx) * 1.4f) return@awaitEachGesture
                 val binding = if (maxPointers >= 2) {
                     if (dy < 0) gestures.twoFingerSwipeUp else gestures.twoFingerSwipeDown
@@ -345,7 +441,7 @@ private fun Modifier.homeGestures(vm: LauncherViewModel, host: LauncherHost): Mo
         .pointerInput(Unit) {
             detectTapGestures(
                 onDoubleTap = { host.perform(gestures.doubleTap) },
-                onLongPress = { vm.ui.sheet = Sheet.HomeMenu },
+                onLongPress = { host.perform(gestures.longPress) },
             )
         }
 }
@@ -666,15 +762,8 @@ private fun Clock(host: LauncherHost) {
     val time = now.format(DateTimeFormatter.ofPattern(if (is24) "HH:mm" else "h:mm"))
     val date = now.format(DateTimeFormatter.ofPattern("EEEE, d MMMM"))
 
-    val onTime = {
-        if (cfg.gestures.clockTap.action == ActionType.NONE) host.startSafely(Intent(AlarmClock.ACTION_SHOW_ALARMS))
-        else host.perform(cfg.gestures.clockTap)
-    }
-    val onDate = {
-        val millis = now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val uri = CalendarContract.CONTENT_URI.buildUpon().appendPath("time").let { ContentUris.appendId(it, millis) }.build()
-        host.startSafely(Intent(Intent.ACTION_VIEW, uri))
-    }
+    val onTime = { host.perform(cfg.gestures.clockTap) }
+    val onDate = { host.perform(cfg.gestures.dateTap) }
     val noRipple = remember { MutableInteractionSource() }
     val family = MaterialTheme.typography.displayLarge.fontFamily
     fun Modifier.tap(f: () -> Unit) = clickable(noRipple, null) { f() }

@@ -175,20 +175,94 @@ data class FolderConfig(
 
 // ---------------------------------------------------------------- Gestures
 
+enum class ActionCategory(val title: String) {
+    LAUNCHER("Canvas"), SYSTEM("System"), CONNECTIVITY("Connections"), SOUND("Sound & media"),
+    TOGGLES("Quick toggles"), SETTINGS("Settings pages"), APPS("Apps & tools"),
+}
+
 @Serializable
-enum class ActionType(override val label: String) : Labeled {
-    NONE("Do nothing"),
-    OPEN_DRAWER("Open app drawer"),
-    SEARCH("Open search"),
-    NOTIFICATIONS("Notifications"),
-    QUICK_SETTINGS("Quick settings"),
-    LOCK_SCREEN("Lock screen"),
-    RECENTS("Recent apps"),
-    POWER_MENU("Power menu"),
-    SCREENSHOT("Take screenshot"),
-    FIRST_PAGE("Go to first page"),
-    LAUNCHER_SETTINGS("Canvas settings"),
-    LAUNCH_APP("Open an app"),
+enum class ActionType(override val label: String, val category: ActionCategory) : Labeled {
+    NONE("Do nothing", ActionCategory.LAUNCHER),
+
+    // Canvas itself
+    OPEN_DRAWER("Open app drawer", ActionCategory.LAUNCHER),
+    SEARCH("Open search", ActionCategory.LAUNCHER),
+    HOME_MENU("Home screen menu", ActionCategory.LAUNCHER),
+    WIDGETS("Add a widget", ActionCategory.LAUNCHER),
+    FIRST_PAGE("Go to first page", ActionCategory.LAUNCHER),
+    NEXT_PAGE("Next page", ActionCategory.LAUNCHER),
+    PREVIOUS_PAGE("Previous page", ActionCategory.LAUNCHER),
+    LOCK_LAYOUT("Lock / unlock layout", ActionCategory.LAUNCHER),
+    WALLPAPER("Change wallpaper", ActionCategory.LAUNCHER),
+    LAUNCHER_SETTINGS("Canvas settings", ActionCategory.LAUNCHER),
+    LAUNCH_APP("Open an app…", ActionCategory.LAUNCHER),
+
+    // System (accessibility-based ones are Canvas Full only)
+    NOTIFICATIONS("Notifications", ActionCategory.SYSTEM),
+    QUICK_SETTINGS("Quick settings", ActionCategory.SYSTEM),
+    LOCK_SCREEN("Lock screen", ActionCategory.SYSTEM),
+    RECENTS("Recent apps", ActionCategory.SYSTEM),
+    SPLIT_SCREEN("Split screen", ActionCategory.SYSTEM),
+    POWER_MENU("Power menu", ActionCategory.SYSTEM),
+    SCREENSHOT("Take screenshot", ActionCategory.SYSTEM),
+    ASSISTANT("Voice assistant", ActionCategory.SYSTEM),
+
+    // Quick toggles
+    FLASHLIGHT("Flashlight on / off", ActionCategory.TOGGLES),
+    DO_NOT_DISTURB("Do Not Disturb on / off", ActionCategory.TOGGLES),
+
+    // Sound & media
+    VOLUME("Show volume slider", ActionCategory.SOUND),
+    MEDIA_PLAY_PAUSE("Play / pause music", ActionCategory.SOUND),
+    MEDIA_NEXT("Next track", ActionCategory.SOUND),
+    MEDIA_PREVIOUS("Previous track", ActionCategory.SOUND),
+    SOUND_SETTINGS("Sound & vibration settings", ActionCategory.SOUND),
+
+    // Connections
+    INTERNET_PANEL("Internet / Wi-Fi panel", ActionCategory.CONNECTIVITY),
+    WIFI_SETTINGS("Wi-Fi settings", ActionCategory.CONNECTIVITY),
+    BLUETOOTH_SETTINGS("Bluetooth settings", ActionCategory.CONNECTIVITY),
+    MOBILE_NETWORK("Mobile network settings", ActionCategory.CONNECTIVITY),
+    DATA_USAGE("Data usage", ActionCategory.CONNECTIVITY),
+    HOTSPOT("Hotspot & tethering", ActionCategory.CONNECTIVITY),
+    AIRPLANE_MODE("Airplane mode settings", ActionCategory.CONNECTIVITY),
+    NFC("NFC settings", ActionCategory.CONNECTIVITY),
+    VPN("VPN settings", ActionCategory.CONNECTIVITY),
+    CAST("Cast screen", ActionCategory.CONNECTIVITY),
+    LOCATION("Location settings", ActionCategory.CONNECTIVITY),
+
+    // Settings pages
+    SYSTEM_SETTINGS("All settings", ActionCategory.SETTINGS),
+    DISPLAY_SETTINGS("Display & brightness", ActionCategory.SETTINGS),
+    NIGHT_LIGHT("Night light / eye comfort", ActionCategory.SETTINGS),
+    BATTERY("Battery usage", ActionCategory.SETTINGS),
+    BATTERY_SAVER("Battery saver", ActionCategory.SETTINGS),
+    STORAGE("Storage", ActionCategory.SETTINGS),
+    APPS_SETTINGS("Apps", ActionCategory.SETTINGS),
+    DEFAULT_APPS("Default apps", ActionCategory.SETTINGS),
+    NOTIFICATION_SETTINGS("Notification settings", ActionCategory.SETTINGS),
+    DND_SETTINGS("Do Not Disturb settings", ActionCategory.SETTINGS),
+    SECURITY("Security & lock screen", ActionCategory.SETTINGS),
+    PRIVACY("Privacy", ActionCategory.SETTINGS),
+    ACCOUNTS("Accounts & sync", ActionCategory.SETTINGS),
+    ACCESSIBILITY("Accessibility settings", ActionCategory.SETTINGS),
+    LANGUAGE("Languages & input", ActionCategory.SETTINGS),
+    KEYBOARD("Keyboard settings", ActionCategory.SETTINGS),
+    DATE_TIME("Date & time", ActionCategory.SETTINGS),
+    DEVELOPER_OPTIONS("Developer options", ActionCategory.SETTINGS),
+    ABOUT_PHONE("About phone", ActionCategory.SETTINGS),
+    HOME_APP("Default home app", ActionCategory.SETTINGS),
+
+    // Apps & tools
+    CAMERA("Camera", ActionCategory.APPS),
+    SELFIE("Camera (selfie)", ActionCategory.APPS),
+    VIDEO("Record video", ActionCategory.APPS),
+    DIALER("Phone dialer", ActionCategory.APPS),
+    ALARMS("Alarms", ActionCategory.APPS),
+    TIMERS("Timers", ActionCategory.APPS),
+    CALENDAR("Calendar", ActionCategory.APPS),
+    WEB_BROWSER("Web browser", ActionCategory.APPS),
+    PLAY_STORE("Play Store", ActionCategory.APPS),
 }
 
 @Serializable
@@ -203,10 +277,17 @@ data class GestureConfig(
     val swipeUp: GestureBinding = GestureBinding(ActionType.OPEN_DRAWER),
     val swipeDown: GestureBinding = GestureBinding(ActionType.NOTIFICATIONS),
     val doubleTap: GestureBinding = GestureBinding(if (dev.canvas.launcher.Features.full) ActionType.LOCK_SCREEN else ActionType.NONE),
+    val longPress: GestureBinding = GestureBinding(ActionType.HOME_MENU),
     val twoFingerSwipeUp: GestureBinding = GestureBinding(ActionType.SEARCH),
     val twoFingerSwipeDown: GestureBinding = GestureBinding(ActionType.QUICK_SETTINGS),
+    val twoFingerDoubleTap: GestureBinding = GestureBinding(ActionType.FLASHLIGHT),
+    val pinchIn: GestureBinding = GestureBinding(ActionType.HOME_MENU),
+    val pinchOut: GestureBinding = GestureBinding(ActionType.NONE),
     val homeButton: GestureBinding = GestureBinding(ActionType.FIRST_PAGE),
-    val clockTap: GestureBinding = GestureBinding(ActionType.NONE),
+    val clockTap: GestureBinding = GestureBinding(ActionType.ALARMS),
+    val dateTap: GestureBinding = GestureBinding(ActionType.CALENDAR),
+    /** The drawer follows your finger when swipe-up opens it. */
+    val swipeUpFollowsFinger: Boolean = true,
 )
 
 // ---------------------------------------------------------------- Search
