@@ -19,11 +19,19 @@ notification access or accessibility services, whatever they use them for. Insta
 
 Both builds share the same app id, so installing Full over Lite keeps your setup.
 
-**From your phone:** every push to this branch builds both in GitHub Actions. Open the latest
-*Build APK* run in a phone browser, download **Canvas-Lite**, unzip and tap the APK.
+**Releases:** every push to the `canvas-launcher` branch builds both APKs, signs them with the
+permanent key in `/signing`, and publishes a GitHub release tagged `canvas-v1.0.N` with
+`Canvas-Lite-1.0.N.apk` and `Canvas-Full-1.0.N.apk`. Canvas releases never take over the repo's
+"Latest" release (that stays GlassDock's).
 
-**Full, from a computer:** download **Canvas-Full**, unzip, plug in the phone (USB debugging on) and run
-`adb install -r Canvas-Full.apk`, or press Run in Android Studio with the *fullDebug* build variant.
+**Automatic update alerts with Obtainium** (github.com/ImranR98/Obtainium):
+1. Add app → Source URL: `https://github.com/ghostsji/glassdock`
+2. *Filter release titles by regular expression*: `^Canvas`
+3. *Filter APKs by regular expression*: `Canvas-Lite` (or `Canvas-Full`)
+4. Save → Install. Obtainium then checks for new Canvas releases and offers one-tap updates.
+
+**Full, from a computer:** download `Canvas-Full-….apk` from the latest Canvas release, plug in the
+phone (USB debugging on) and run `adb install -r Canvas-Full-….apk`.
 
 ## Build & install (about 10 minutes the first time)
 
