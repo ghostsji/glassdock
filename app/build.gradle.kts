@@ -19,6 +19,21 @@ android {
         versionName = "1.0"
     }
 
+    // "lite" installs straight from a phone. "full" adds notification badges and the
+    // accessibility gestures, which Play Protect blocks when sideloaded from a browser.
+    flavorDimensions += "features"
+    productFlavors {
+        create("lite") {
+            dimension = "features"
+            buildConfigField("boolean", "FULL_FEATURES", "false")
+        }
+        create("full") {
+            dimension = "features"
+            versionNameSuffix = "-full"
+            buildConfigField("boolean", "FULL_FEATURES", "true")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -34,7 +49,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 kotlin {

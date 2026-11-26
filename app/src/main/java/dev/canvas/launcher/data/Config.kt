@@ -202,7 +202,7 @@ data class GestureBinding(
 data class GestureConfig(
     val swipeUp: GestureBinding = GestureBinding(ActionType.OPEN_DRAWER),
     val swipeDown: GestureBinding = GestureBinding(ActionType.NOTIFICATIONS),
-    val doubleTap: GestureBinding = GestureBinding(ActionType.LOCK_SCREEN),
+    val doubleTap: GestureBinding = GestureBinding(if (dev.canvas.launcher.Features.full) ActionType.LOCK_SCREEN else ActionType.NONE),
     val twoFingerSwipeUp: GestureBinding = GestureBinding(ActionType.SEARCH),
     val twoFingerSwipeDown: GestureBinding = GestureBinding(ActionType.QUICK_SETTINGS),
     val homeButton: GestureBinding = GestureBinding(ActionType.FIRST_PAGE),

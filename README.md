@@ -4,6 +4,27 @@ Canvas is a full Android home-screen replacement where almost everything can be 
 layout, look, gestures and behaviour. It's built natively in Kotlin + Jetpack Compose,
 runs on Android 8.0 or newer, and has no ads, no tracking and no network access.
 
+## Two versions
+
+| | Canvas **Lite** | Canvas **Full** |
+|---|---|---|
+| Install from your phone (browser / Files) | ✅ | ❌ blocked by Play Protect* |
+| Install from a computer (Android Studio / adb) | ✅ | ✅ |
+| Everything else in this README | ✅ | ✅ |
+| Notification badges | — | ✅ |
+| Lock / recents / power menu / screenshot gestures | — | ✅ |
+
+\* Play Protect's *enhanced fraud protection* blocks phone-sideloaded apps that declare
+notification access or accessibility services, whatever they use them for. Installs over USB aren't affected.
+
+Both builds share the same app id, so installing Full over Lite keeps your setup.
+
+**From your phone:** every push to this branch builds both in GitHub Actions. Open the latest
+*Build APK* run in a phone browser, download **Canvas-Lite**, unzip and tap the APK.
+
+**Full, from a computer:** download **Canvas-Full**, unzip, plug in the phone (USB debugging on) and run
+`adb install -r Canvas-Full.apk`, or press Run in Android Studio with the *fullDebug* build variant.
+
 ## Build & install (about 10 minutes the first time)
 
 1. Install **Android Studio** (latest stable) from developer.android.com/studio.

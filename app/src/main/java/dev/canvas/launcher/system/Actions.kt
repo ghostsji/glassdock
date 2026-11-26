@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import dev.canvas.launcher.Features
 import dev.canvas.launcher.SettingsActivity
 import dev.canvas.launcher.data.ActionType
 import dev.canvas.launcher.data.GestureBinding
@@ -45,6 +46,10 @@ object Actions {
     }
 
     private fun needsA11y(context: Context, action: Int?) {
+        if (!Features.full) {
+            Toast.makeText(context, "This gesture is only in Canvas Full", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (action == null) {
             Toast.makeText(context, "This gesture needs Android 9 or newer", Toast.LENGTH_SHORT).show()
             return

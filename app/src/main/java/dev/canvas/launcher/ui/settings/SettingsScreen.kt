@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import dev.canvas.launcher.Features
 import dev.canvas.launcher.apps.IconComposeShape
 import dev.canvas.launcher.apps.IconPack
 import dev.canvas.launcher.data.AccentSource
@@ -202,7 +203,10 @@ private fun LazyListScope.mainPage(host: SettingsHost, go: (Page) -> Unit) {
     item { SectionHeader("How it works") }
     item { NavRow("Gestures", "Swipes, double tap, home button", Icons.Outlined.Gesture) { go(Page.GESTURES) } }
     item { NavRow("Search", "Apps, contacts, calculator, web engine", Icons.Outlined.Search) { go(Page.SEARCH) } }
-    item { NavRow("Notification badges", "Dots or counts on icons", Icons.Outlined.NotificationsActive) { go(Page.BADGES) } }
+    item {
+        NavRow("Notification badges", if (Features.full) "Dots or counts on icons" else "Canvas Full only",
+            Icons.Outlined.NotificationsActive) { go(Page.BADGES) }
+    }
     item { NavRow("Hidden apps", "Keep apps out of the drawer", Icons.Outlined.VisibilityOff) { go(Page.HIDDEN) } }
     item { NavRow("Behaviour", "Haptics, animation speed, rotation", Icons.Outlined.Speed) { go(Page.BEHAVIOR) } }
     item { NavRow("Backup & restore", "Export, import, share your setup", Icons.Outlined.Backup) { go(Page.BACKUP) } }
@@ -227,8 +231,8 @@ private fun SetupCard(host: SettingsHost) {
     val ctx = LocalContext.current
     val tick = host.resumeTick.intValue
     val isDefault = remember(tick) { host.isDefaultLauncher() }
-    val a11y = remember(tick) { LauncherAccessibilityService.isEnabled(ctx) }
-    val badges = remember(tick) { Badges.hasAccess(ctx) }
+    val a11y = !Features.full || remember(tick) { LauncherAccessibilityService.isEnabled(ctx) }
+    val badges = !Features.full || remember(tick) { Badges.hasAccess(ctx) }
     if (isDefault && a11y && badges) return
 
     Card(
@@ -238,11 +242,13 @@ private fun SetupCard(host: SettingsHost) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Text("Finish setting up", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             SetupStep("Make Canvas your home screen", "Required", isDefault) { host.requestDefaultLauncher() }
-            SetupStep("Turn on Canvas gestures", "Optional: double-tap to lock, recents, power menu", a11y) {
-                host.open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            SetupStep("Allow notification badges", "Optional: dots and counts on icons", badges) {
-                host.open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            if (Features.full) {
+                SetupStep("Turn on Canvas gestures", "Optional: double-tap to lock, recents, power menu", a11y) {
+                    host.open(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+                SetupStep("Allow notification badges", "Optional: dots and counts on icons", badges) {
+                    host.open(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
             }
             if (isDefault) TextButton(onClick = host::goHome, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Go to home screen") }
         }
@@ -471,7 +477,13 @@ private fun GesturesPage(vm: LauncherViewModel, host: SettingsHost, cfg: Launche
     fun set(f: (dev.canvas.launcher.data.GestureConfig) -> dev.canvas.launcher.data.GestureConfig) = update { it.copy(gestures = f(it.gestures)) }
 
     Column {
-        if (!a11y) {
+        if (!Features.full) {
+            Text(
+                "Lock screen, recent apps, power menu and screenshot gestures are in Canvas Full, which has to be installed from a computer. Everything else works here.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        } else if (!a11y) {
             Card(
                 Modifier.fillMaxWidth().padding(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -498,7 +510,7 @@ private fun GestureRow(vm: LauncherViewModel, title: String, binding: GestureBin
     val apps by vm.drawerApps.collectAsState()
     var pickAction by remember { mutableStateOf(false) }
     var pickApp by remember { mutableStateOf(false) }
-    val actions = ActionType.entries
+    val actions = ActionType.entries.filter { Features.available(it) || it == binding.action }
     val summary = when (binding.action) {
         ActionType.LAUNCH_APP -> "Open " + (apps.firstOrNull { it.key == binding.appKey }?.label ?: "an app")
         ActionType.NONE -> noneLabel ?: ActionType.NONE.label
@@ -562,6 +574,14 @@ private fun BadgesPage(host: SettingsHost, cfg: LauncherConfig, update: Update) 
     val tick = host.resumeTick.intValue
     val access = remember(tick) { Badges.hasAccess(ctx) }
     fun set(f: (dev.canvas.launcher.data.BadgeConfig) -> dev.canvas.launcher.data.BadgeConfig) = update { it.copy(badges = f(it.badges)) }
+    if (!Features.full) {
+        Text(
+            "Notification badges need notification access, which Android only allows for Canvas Full (installed from a computer). This is Canvas Lite.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(24.dp),
+        )
+        return
+    }
     Column {
         if (!access) {
             Card(Modifier.fillMaxWidth().padding(16.dp)) {

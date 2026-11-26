@@ -19,10 +19,23 @@ jobs:
         with:
           gradle-version: 8.14.3
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Build Lite and Full APKs
+        run: gradle assembleLiteDebug assembleFullDebug --stacktrace
 
+      - name: Rename APKs
+        run: |
+          mkdir out
+          cp app/build/outputs/apk/lite/debug/app-lite-debug.apk out/Canvas-Lite.apk
+          cp app/build/outputs/apk/full/debug/app-full-debug.apk out/Canvas-Full.apk
+
+      # Lite installs straight from a phone browser.
       - uses: actions/upload-artifact@v4
         with:
-          name: Canvas-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Canvas-Lite
+          path: out/Canvas-Lite.apk
+
+      # Full adds notification badges + lock/recents gestures; install it from a computer (adb).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Canvas-Full
+          path: out/Canvas-Full.apk
